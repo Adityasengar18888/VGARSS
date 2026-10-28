@@ -23,8 +23,11 @@ class SimulationEngine:
         self,
         scheduler: BaseScheduler,
         processes: Optional[List[ProcessDefinition]] = None,
+        resource_manager: Optional["ResourceManager"] = None,
     ):
+        from backend.app.simulation.resources.manager import ResourceManager
         self.scheduler = scheduler
+        self.resource_manager: Optional[ResourceManager] = resource_manager
         self.current_tick: int = 0
         self.busy_ticks: int = 0
         self.idle_ticks: int = 0
@@ -151,12 +154,19 @@ class SimulationEngine:
 
         # 7. Check for termination of the executed process
         if self.running_process is not None and self.running_process.remaining_time == 0:
+            terminated_id = self.running_process.id
             self.running_process.state = ProcessState.TERMINATED
             self.running_process.completion_time = self.current_tick
             self.running_process.calculate_final_metrics()
             self.terminated_processes.append(self.running_process)
             self.running_process = None
             self.current_quantum_ticks = 0
+
+            # Automatically release all locks held by terminating process
+            if self.resource_manager:
+                awakened = self.resource_manager.handle_process_disconnect(terminated_id)
+                for pid in awakened:
+                    self._wake_process(pid)
 
         # 8. Produce snapshot
         snapshot = SimulationSnapshot(
@@ -211,3 +221,96 @@ class SimulationEngine:
     def get_pcb(self, process_id: str) -> Optional[ProcessControlBlock]:
         """Retrieves the live PCB of any process."""
         return self._pcb_lookup.get(process_id)
+
+    def request_resource(
+        self,
+        process_id: str,
+        resource_id: str,
+        mode: Optional["ResourceMode"] = None,
+        units: int = 1,
+    ) -> bool:
+        """Process requests a resource. If denied, transitions process RUNNING -> WAITING."""
+        from backend.app.simulation.resources.models import ResourceMode
+        if mode is None:
+            mode = ResourceMode.EXCLUSIVE
+        if not self.resource_manager:
+            raise RuntimeError("SimulationEngine has no configured ResourceManager.")
+
+        pcb = self._pcb_lookup.get(process_id)
+        if not pcb:
+            raise KeyError(f"Process '{process_id}' not found.")
+
+        granted = self.resource_manager.acquire(
+            process_id=process_id,
+            resource_id=resource_id,
+            mode=mode,
+            units=units,
+            current_tick=self.current_tick,
+        )
+
+        if not granted:
+            # Transition to WAITING state
+            pcb.state = ProcessState.WAITING
+            if self.running_process and self.running_process.id == process_id:
+                self.running_process = None
+                self.current_quantum_ticks = 0
+            if pcb in self.ready_queue:
+                self.ready_queue.remove(pcb)
+            if pcb not in self.waiting_queue:
+                self.waiting_queue.append(pcb)
+
+        return granted
+
+    def release_resource(
+        self,
+        process_id: str,
+        resource_id: str,
+        units: Optional[int] = None,
+    ) -> List[str]:
+        """Process releases a resource. Awakened processes transition WAITING -> READY."""
+        if not self.resource_manager:
+            raise RuntimeError("SimulationEngine has no configured ResourceManager.")
+
+        awakened = self.resource_manager.release(process_id, resource_id, units)
+        for pid in awakened:
+            self._wake_process(pid)
+        return awakened
+
+    def _wake_process(self, process_id: str) -> None:
+        """Internal helper to wake a process from WAITING to READY."""
+        pcb = self._pcb_lookup.get(process_id)
+        if pcb and pcb in self.waiting_queue:
+            self.waiting_queue.remove(pcb)
+            pcb.state = ProcessState.READY
+            self.ready_queue.append(pcb)
+
+    def cancel_or_disconnect_process(self, process_id: str) -> List[str]:
+        """Handles process cancellation, abort, or disconnect recovery."""
+        pcb = self._pcb_lookup.get(process_id)
+        if not pcb:
+            raise KeyError(f"Process '{process_id}' not found.")
+
+        awakened: List[str] = []
+        if self.resource_manager:
+            awakened = self.resource_manager.handle_process_disconnect(process_id)
+            for pid in awakened:
+                self._wake_process(pid)
+
+        if self.running_process and self.running_process.id == process_id:
+            self.running_process = None
+            self.current_quantum_ticks = 0
+
+        if pcb in self.new_processes:
+            self.new_processes.remove(pcb)
+        if pcb in self.ready_queue:
+            self.ready_queue.remove(pcb)
+        if pcb in self.waiting_queue:
+            self.waiting_queue.remove(pcb)
+
+        pcb.state = ProcessState.TERMINATED
+        pcb.completion_time = self.current_tick
+        pcb.calculate_final_metrics()
+        if pcb not in self.terminated_processes:
+            self.terminated_processes.append(pcb)
+
+        return awakened
