@@ -355,6 +355,13 @@ def init_db(db_path: Optional[str] = None) -> None:
         numeric_priority INTEGER NOT NULL DEFAULT 2,
         deadline TIMESTAMP,
         estimated_burst_ticks INTEGER NOT NULL DEFAULT 5,
+        arrival_time INTEGER NOT NULL DEFAULT 0,
+        remaining_burst_ticks INTEGER NOT NULL DEFAULT 5,
+        start_tick INTEGER,
+        completion_tick INTEGER,
+        waiting_ticks INTEGER NOT NULL DEFAULT 0,
+        turnaround_ticks INTEGER NOT NULL DEFAULT 0,
+        response_ticks INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'NEW',     -- 'NEW', 'READY', 'RUNNING', 'WAITING', 'TERMINATED'
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -371,6 +378,8 @@ def init_db(db_path: Optional[str] = None) -> None:
         total_capacity INTEGER NOT NULL DEFAULT 1,
         available_units INTEGER NOT NULL DEFAULT 1,
         description TEXT DEFAULT '',
+        order_rank INTEGER NOT NULL DEFAULT 1,
+        exclusive_holder TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (workspace_id, name)
     );
@@ -510,12 +519,42 @@ def init_db(db_path: Optional[str] = None) -> None:
             with conn.cursor() as cur:
                 pg_sql = schema_sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
                 cur.execute(pg_sql)
+            _migrate_columns_postgres(conn)
             _seed_defaults(conn)
             if hasattr(conn, "commit"):
                 conn.commit()
             conn.close()
         except Exception as e:
             logger.error(f"PostgreSQL schema init failed: {e}")
+
+
+def _migrate_columns_postgres(conn: Any) -> None:
+    """Ensures PostgreSQL tables receive newly introduced columns seamlessly."""
+    migrations = [
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS arrival_time INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS remaining_burst_ticks INTEGER NOT NULL DEFAULT 5;",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_tick INTEGER;",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_tick INTEGER;",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS waiting_ticks INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS turnaround_ticks INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS response_ticks INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE resources ADD COLUMN IF NOT EXISTS order_rank INTEGER NOT NULL DEFAULT 1;",
+        "ALTER TABLE resources ADD COLUMN IF NOT EXISTS exclusive_holder TEXT;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT '';",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT '';",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS status_message TEXT DEFAULT '';",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS presence_state TEXT NOT NULL DEFAULT 'OFFLINE';",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;",
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS device_info TEXT DEFAULT 'Desktop Web';",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'SENT';",
+    ]
+    cur = conn.cursor()
+    for sql in migrations:
+        try:
+            cur.execute(sql)
+        except Exception as e:
+            logger.warning(f"PostgreSQL column migration notice: {e}")
 
 
 def _migrate_columns_sqlite(conn: sqlite3.Connection) -> None:
