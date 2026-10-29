@@ -89,10 +89,11 @@ app = FastAPI(
 if settings.trust_proxy_headers:
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
-# Production CORS Configuration with explicit trusted origins
+# Production CORS Configuration with explicit trusted origins and Vercel preview support
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],

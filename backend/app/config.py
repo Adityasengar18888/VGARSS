@@ -6,21 +6,31 @@ from pydantic_settings import BaseSettings
 
 
 def _parse_cors_origins() -> List[str]:
-    raw = os.getenv("VGARSS_CORS_ORIGINS") or os.getenv("CORS_ORIGINS")
-    if raw:
-        raw = raw.strip()
-        if raw.startswith("["):
-            try:
-                return json.loads(raw)
-            except Exception:
-                pass
-        return [o.strip() for o in raw.split(",") if o.strip()]
-    return [
+    defaults = [
+        "https://vgarss.vercel.app",
+        "https://adityasengar.online",
+        "https://www.adityasengar.online",
+        "https://vgarss.adityasengar.online",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+    raw = os.getenv("VGARSS_CORS_ORIGINS") or os.getenv("CORS_ORIGINS")
+    if raw:
+        raw = raw.strip()
+        parsed: List[str] = []
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                pass
+        else:
+            parsed = [o.strip() for o in raw.split(",") if o.strip()]
+        for origin in parsed:
+            if origin not in defaults:
+                defaults.append(origin)
+    return defaults
 
 
 def _resolve_database_url() -> str:

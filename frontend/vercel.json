@@ -4,6 +4,14 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/vgarss/api/(.*)",
+      "destination": "https://vgarss.onrender.com/api/$1"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "https://vgarss.onrender.com/api/$1"
+    },
+    {
       "source": "/vgarss/assets/(.*)",
       "destination": "/assets/$1"
     },

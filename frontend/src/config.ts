@@ -18,12 +18,16 @@ export function getApiBaseUrl(): string {
     return import.meta.env.VITE_API_URL.replace(/\/+$/, '');
   }
 
-  // 3. Dynamic browser origin detection
+  // 3. Dynamic browser origin & cloud deployment detection
   if (typeof window !== 'undefined') {
     const { protocol, hostname, port } = window.location;
     // In local development with Vite dev server on port 5173, point to backend default 8000
     if (port === '5173') {
       return `${protocol}//${hostname}:8000`;
+    }
+    // When running on Vercel preview or production without explicit VITE_API_URL, route to Render backend
+    if (hostname.endsWith('vercel.app')) {
+      return 'https://vgarss.onrender.com';
     }
     // In production or reverse proxy deployments, use window.location.origin
     return window.location.origin;
@@ -42,7 +46,12 @@ export function getWebSocketBaseUrl(): string {
     return import.meta.env.VITE_WS_URL;
   }
 
-  // 3. Derive directly from API Base URL
+  // 3. Cloud deployment detection
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
+    return 'wss://vgarss.onrender.com';
+  }
+
+  // 4. Derive directly from API Base URL
   const apiUrl = getApiBaseUrl();
   try {
     const parsed = new URL(apiUrl);
