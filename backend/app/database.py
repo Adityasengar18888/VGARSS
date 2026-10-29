@@ -7,14 +7,132 @@ Provides ACID relational persistence for:
 - Full backward-compatibility with VGARSS 1.0 Virtual Groups and Simulations
 """
 import os
+import re
 import sqlite3
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Generator, Optional, Any
+from typing import Generator, Optional, Any, List, Dict
 from backend.app.config import settings
 from backend.app.security import hash_password
 
 logger = logging.getLogger("vgarss.database")
+
+
+class CompatRow(dict):
+    """Row wrapper that allows access by column name (row['col']), attribute, and index (row[0])."""
+    def __init__(self, data: dict):
+        super().__init__(data)
+        self._keys = list(data.keys())
+        self._values = list(data.values())
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return self._values[item]
+        return super().__getitem__(item)
+
+    def keys(self):
+        return self._keys
+
+    def values(self):
+        return self._values
+
+    def items(self):
+        return super().items()
+
+
+class PostgresCompatCursor:
+    """Cursor adapter converting SQLite-style parameter placeholders (?) and queries to PostgreSQL."""
+    def __init__(self, raw_cursor):
+        self._cur = raw_cursor
+
+    def _convert_sql(self, sql: str) -> str:
+        s = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO", "INSERT INTO", sql, flags=re.IGNORECASE)
+        has_ignore = bool(re.search(r"INSERT\s+OR\s+IGNORE\s+INTO", sql, flags=re.IGNORECASE))
+        if has_ignore and "ON CONFLICT" not in s.upper():
+            s = s.strip()
+            if s.endswith(";"):
+                s = s[:-1] + " ON CONFLICT DO NOTHING;"
+            else:
+                s = s + " ON CONFLICT DO NOTHING"
+        parts = s.split("'")
+        for i in range(0, len(parts), 2):
+            parts[i] = parts[i].replace("?", "%s")
+        return "'".join(parts)
+
+    def execute(self, sql: str, params: Any = None):
+        converted = self._convert_sql(sql)
+        if params is not None:
+            if isinstance(params, (list, tuple)):
+                self._cur.execute(converted, params)
+            else:
+                self._cur.execute(converted, (params,))
+        else:
+            self._cur.execute(converted)
+        return self
+
+    def executemany(self, sql: str, seq_of_params: Any):
+        converted = self._convert_sql(sql)
+        self._cur.executemany(converted, seq_of_params)
+        return self
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        if row is None:
+            return None
+        return CompatRow(row)
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        return [CompatRow(r) for r in rows]
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    @property
+    def lastrowid(self):
+        return getattr(self._cur, "lastrowid", None)
+
+    def close(self):
+        self._cur.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+class PostgresCompatConnection:
+    """Connection adapter that provides SQLite-compatible execution, transactions, and row factories over psycopg."""
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+
+    def cursor(self):
+        return PostgresCompatCursor(self._conn.cursor())
+
+    def execute(self, sql: str, params: Any = None):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        else:
+            self.commit()
 
 
 def get_db_path() -> str:
@@ -42,8 +160,8 @@ def get_connection(db_path: Optional[str] = None) -> Any:
         try:
             import psycopg
             from psycopg.rows import dict_row
-            conn = psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True)
-            return conn
+            raw_conn = psycopg.connect(settings.database_url, row_factory=dict_row)
+            return PostgresCompatConnection(raw_conn)
         except Exception as e:
             logger.warning(f"Could not connect to PostgreSQL ({e}). Falling back to SQLite WAL mode.")
 
@@ -384,7 +502,7 @@ def init_db(db_path: Optional[str] = None) -> None:
         with conn:
             conn.executescript(schema_sql)
             _migrate_columns_sqlite(conn)
-            _seed_defaults_sqlite(conn)
+            _seed_defaults(conn)
         conn.close()
     else:
         # PostgreSQL execution
@@ -392,6 +510,9 @@ def init_db(db_path: Optional[str] = None) -> None:
             with conn.cursor() as cur:
                 pg_sql = schema_sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
                 cur.execute(pg_sql)
+            _seed_defaults(conn)
+            if hasattr(conn, "commit"):
+                conn.commit()
             conn.close()
         except Exception as e:
             logger.error(f"PostgreSQL schema init failed: {e}")
@@ -571,7 +692,7 @@ def run_migrations(db_path: Optional[str] = None) -> None:
     init_db(db_path)
 
 
-def _seed_defaults_sqlite(conn: sqlite3.Connection) -> None:
+def _seed_defaults(conn: Any) -> None:
     """Seeds default users and primary workspace for instant multi-user exploration (skipped during pytest)."""
     if os.getenv("PYTEST_CURRENT_TEST"):
         return
@@ -673,6 +794,9 @@ def _seed_defaults_sqlite(conn: sqlite3.Connection) -> None:
             """,
             (r_id, r_ws, r_name, r_type, r_cap, r_avail, r_desc, r_rank),
         )
+
+    if hasattr(conn, "commit"):
+        conn.commit()
 
 
 def get_db() -> Generator[Any, None, None]:
