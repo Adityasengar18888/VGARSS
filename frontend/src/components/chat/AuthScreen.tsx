@@ -4,8 +4,8 @@ import { UserProfile } from '../../types/chat';
 import { Cpu, ArrowRight, Shield, User, Lock, Mail, AlertCircle } from 'lucide-react';
 
 interface AuthScreenProps {
-  onAuthenticated: (user: UserProfile) => void;
-  onDevSwitch: (username: string) => void;
+  onAuthenticated: (user: UserProfile) => void | Promise<void>;
+  onDevSwitch: (username: string) => void | Promise<void>;
 }
 
 export function AuthScreen({ onAuthenticated, onDevSwitch }: AuthScreenProps) {
@@ -24,7 +24,7 @@ export function AuthScreen({ onAuthenticated, onDevSwitch }: AuthScreenProps) {
     try {
       if (mode === 'login') {
         const res = await api.v2Login({ username: username.trim(), password });
-        onAuthenticated(res.user);
+        await onAuthenticated(res.user);
       } else {
         if (!email.trim()) {
           setError('Email address is required for registration.');
@@ -36,7 +36,7 @@ export function AuthScreen({ onAuthenticated, onDevSwitch }: AuthScreenProps) {
           email: email.trim(),
           password,
         });
-        onAuthenticated(res.user);
+        await onAuthenticated(res.user);
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
@@ -183,8 +183,19 @@ export function AuthScreen({ onAuthenticated, onDevSwitch }: AuthScreenProps) {
               <button
                 key={uname}
                 type="button"
-                onClick={() => onDevSwitch(uname)}
-                className="py-1.5 px-2 bg-[#F8FAFC] hover:bg-[#EEF2FF] border border-[#E4E7EC] hover:border-[#CBD5E1] rounded-md text-left transition active:scale-[0.97]"
+                disabled={loading}
+                onClick={async () => {
+                  setError(null);
+                  setLoading(true);
+                  try {
+                    await onDevSwitch(uname);
+                  } catch (err: any) {
+                    setError(err.message || 'Quick login failed.');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="py-1.5 px-2 bg-[#F8FAFC] hover:bg-[#EEF2FF] border border-[#E4E7EC] hover:border-[#CBD5E1] rounded-md text-left transition active:scale-[0.97] disabled:opacity-50"
               >
                 <div className="font-semibold text-[#202631] capitalize text-[11px] truncate">{uname}</div>
                 <div className="text-[9px] text-[#667085]">{role}</div>

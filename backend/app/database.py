@@ -548,6 +548,10 @@ def _migrate_columns_postgres(conn: Any) -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;",
         "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS device_info TEXT DEFAULT 'Desktop Web';",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'SENT';",
+        # Clean up transient probe / test accounts from live Neon PostgreSQL
+        "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email IN ('probe_check@test.com', 'diag1@test.com') OR username IN ('test_diag_1', 'testuser_probe'));",
+        "DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email IN ('probe_check@test.com', 'diag1@test.com') OR username IN ('test_diag_1', 'testuser_probe'));",
+        "DELETE FROM users WHERE email IN ('probe_check@test.com', 'diag1@test.com') OR username IN ('test_diag_1', 'testuser_probe');",
     ]
     cur = conn.cursor()
     for sql in migrations:

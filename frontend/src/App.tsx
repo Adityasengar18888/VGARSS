@@ -269,18 +269,30 @@ export default function App() {
       await checkHealth();
 
       let user: UserProfile | null = null;
-      if (api.token) {
+      const isExplicitAuth = typeof window !== 'undefined' ? localStorage.getItem('vgarss_auth_user') : null;
+      if (api.token && isExplicitAuth) {
         try {
           user = await api.getProfile();
         } catch {
           api.setToken(null);
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('vgarss_auth_user');
+          }
+        }
+      } else {
+        // Clear any old auto-logged-in demo tokens (e.g. legacy Alice session)
+        api.setToken(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('vgarss_token');
+          localStorage.removeItem('vgarss_auth_user');
         }
       }
 
-      // If no valid session, auto-authenticate with Alice default identity
+      // If no valid session, prompt the user with the AuthScreen (Sign In / Register)
       if (!user) {
-        const authRes = await api.devSwitchUser('alice');
-        user = authRes.user;
+        setCurrentUser(null);
+        setBootstrapping(false);
+        return;
       }
 
       setCurrentUser(user);
@@ -473,8 +485,23 @@ export default function App() {
 
   // Logout Handler
   const handleLogout = async () => {
-    await api.v2Logout();
+    try {
+      await api.v2Logout();
+    } catch {
+      // ignore
+    }
+    api.setToken(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('vgarss_token');
+      localStorage.removeItem('vgarss_auth_user');
+    }
     setCurrentUser(null);
+    setActiveWorkspace(null);
+    setWorkspaces([]);
+    setChannels([]);
+    setMessages([]);
+    setTasks([]);
+    setMembers([]);
     setIsProfileOpen(false);
   };
 
@@ -580,15 +607,31 @@ export default function App() {
     return (
       <AuthScreen
         onAuthenticated={async (user) => {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vgarss_auth_user', user.username);
+          }
           setCurrentUser(user);
           const wsList = await api.listWorkspaces();
           setWorkspaces(wsList);
           if (wsList.length > 0) {
             setActiveWorkspace(wsList[0]);
             await refreshWorkspaceData(wsList[0].id);
+          } else {
+            const defaultWs = await api.createWorkspace({
+              name: `${user.display_name || user.username}'s Workspace`,
+              description: 'Personal Systems Collaboration & Scheduling Workspace',
+            });
+            setWorkspaces([defaultWs]);
+            setActiveWorkspace(defaultWs);
+            await refreshWorkspaceData(defaultWs.id);
           }
         }}
-        onDevSwitch={handleSwitchDevUser}
+        onDevSwitch={async (uname) => {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vgarss_auth_user', uname);
+          }
+          await handleSwitchDevUser(uname);
+        }}
       />
     );
   }
@@ -627,6 +670,7 @@ export default function App() {
             currentUser={currentUser}
             onOpenProfile={() => setIsProfileOpen(true)}
             onSwitchDevUser={handleSwitchDevUser}
+            onLogout={handleLogout}
           />
 
           {/* Column 2: Channel & Conversation Sidebar (240px) */}

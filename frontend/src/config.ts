@@ -43,9 +43,12 @@ export function getWebSocketBaseUrl(): string {
     return import.meta.env.VITE_WS_URL;
   }
 
-  // 3. Cloud deployment detection
-  if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
-    return 'wss://vgarss.onrender.com';
+  // 3. Cloud/Production deployment WebSocket routing
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location;
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return 'wss://vgarss.onrender.com';
+    }
   }
 
   // 4. Derive directly from API Base URL

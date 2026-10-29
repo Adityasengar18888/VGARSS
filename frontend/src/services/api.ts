@@ -63,7 +63,15 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(url, { ...options, headers });
+    let response: Response;
+    try {
+      response = await fetch(url, { ...options, headers });
+    } catch (err: any) {
+      if (err.name === 'TypeError' || err.message?.includes('fetch')) {
+        throw new Error('Unable to reach VGARSS backend. The server may be waking up from sleep; please try again in a moment.');
+      }
+      throw err;
+    }
     if (!response.ok) {
       let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
       try {

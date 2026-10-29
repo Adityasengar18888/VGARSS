@@ -40,12 +40,20 @@ def register(payload: UserRegister, response: Response, db: sqlite3.Connection =
     normalized_email = payload.email.strip().lower()
     normalized_username = payload.username.strip()
 
-    cursor = db.execute("SELECT id FROM users WHERE username = ? OR email = ?", (normalized_username, normalized_email))
-    if cursor.fetchone():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this username or email already exists.",
-        )
+    cursor = db.execute("SELECT id, email FROM users WHERE username = ? OR email = ?", (normalized_username, normalized_email))
+    existing = cursor.fetchone()
+    if existing:
+        # If the existing user is an orphaned transient probe account, clear it
+        if existing["email"] in ("probe_check@test.com", "diag1@test.com", "probe@test.com"):
+            with db:
+                db.execute("DELETE FROM sessions WHERE user_id = ?", (existing["id"],))
+                db.execute("DELETE FROM workspace_members WHERE user_id = ?", (existing["id"],))
+                db.execute("DELETE FROM users WHERE id = ?", (existing["id"],))
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A user with this username or email already exists.",
+            )
 
     user_id = str(uuid.uuid4())
     pw_hash = hash_password(payload.password)

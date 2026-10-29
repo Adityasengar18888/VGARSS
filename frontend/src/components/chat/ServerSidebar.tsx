@@ -1,4 +1,4 @@
-import { Plus, Cpu } from 'lucide-react';
+import { Plus, Cpu, LogOut } from 'lucide-react';
 import { Workspace, UserProfile } from '../../types/chat';
 
 interface ServerSidebarProps {
@@ -10,6 +10,7 @@ interface ServerSidebarProps {
   onOpenProfile: () => void;
   onSwitchDevUser: (username: string) => void;
   totalUnreadCount?: number;
+  onLogout?: () => void;
 }
 
 export function ServerSidebar({
@@ -20,6 +21,7 @@ export function ServerSidebar({
   currentUser,
   onOpenProfile,
   onSwitchDevUser,
+  onLogout,
 }: ServerSidebarProps) {
   return (
     <aside
@@ -142,6 +144,18 @@ export function ServerSidebar({
           />
         </button>
       </div>
+
+      {/* Quick Sign Out Button */}
+      {onLogout && (
+        <button
+          onClick={onLogout}
+          className="mt-2 p-1.5 rounded-lg text-[#98A2B3] hover:text-[#C0393A] hover:bg-[#FEF3F2] transition active:scale-[0.95]"
+          title="Sign Out / Switch Account"
+          aria-label="Sign Out"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
+      )}
     </aside>
   );
 }

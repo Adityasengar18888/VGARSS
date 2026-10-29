@@ -35,6 +35,8 @@ export function useChatWebSocket({
   const lastSeqRef = useRef<Record<string, number>>({});
   const lastPingTimestamp = useRef<number>(0);
   const reconnectAttempts = useRef<number>(0);
+  const activeTargetIdRef = useRef<string | null | undefined>(activeTargetId);
+  activeTargetIdRef.current = activeTargetId;
 
   const getWsUrl = useCallback(() => {
     const baseWs = getWebSocketBaseUrl();
@@ -94,6 +96,10 @@ export function useChatWebSocket({
         setStatus('connected');
         reconnectAttempts.current = 0;
 
+        // Immediate initial ping for instant latency telemetry
+        lastPingTimestamp.current = performance.now();
+        sendEvent({ type: 'PING' });
+
         // Start ping interval
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = setInterval(() => {
@@ -102,8 +108,9 @@ export function useChatWebSocket({
         }, 15000);
 
         // Catch up on active target if disconnected previously
-        if (activeTargetId && lastSeqRef.current[activeTargetId] !== undefined) {
-          requestCatchup(activeTargetId, lastSeqRef.current[activeTargetId]);
+        const currentActive = activeTargetIdRef.current;
+        if (currentActive && lastSeqRef.current[currentActive] !== undefined) {
+          requestCatchup(currentActive, lastSeqRef.current[currentActive]);
         }
       };
 
@@ -124,7 +131,7 @@ export function useChatWebSocket({
           } else if (eventType === 'TYPING_EVENT') {
             const typerId = data.user_id;
             const typerName = data.display_name || data.username;
-            if (data.target_id === activeTargetId) {
+            if (data.target_id === activeTargetIdRef.current) {
               setActiveTypers((prev) => ({ ...prev, [typerId]: typerName }));
 
               // Clear indicator after 3 seconds of silence
@@ -190,7 +197,7 @@ export function useChatWebSocket({
       Object.values(typingTimersRef.current).forEach((t) => clearTimeout(t));
       if (wsRef.current) wsRef.current.close();
     };
-  }, [token, workspaceId, getWsUrl, sendEvent, requestCatchup, onMessageReceived, onPresenceUpdate, onTypingEvent, onTaskEvent, activeTargetId]);
+  }, [token, workspaceId, getWsUrl, sendEvent, requestCatchup, onMessageReceived, onPresenceUpdate, onTypingEvent, onTaskEvent]);
 
   return {
     status,
