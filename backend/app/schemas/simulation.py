@@ -1,6 +1,6 @@
 """Simulation Configuration & Telemetry Pydantic Schemas."""
 from typing import Optional, List, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProcessInput(BaseModel):
@@ -26,6 +26,22 @@ class SimulationCreate(BaseModel):
     is_preemptive: bool = Field(default=False)
     processes: List[ProcessInput] = Field(..., min_length=1)
     resources: List[ResourceInput] = Field(default_factory=list)
+
+    @field_validator("processes")
+    @classmethod
+    def validate_unique_processes(cls, v: List[ProcessInput]) -> List[ProcessInput]:
+        ids = [p.id for p in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate process ID detected. Process IDs must be unique.")
+        return v
+
+    @field_validator("resources")
+    @classmethod
+    def validate_unique_resources(cls, v: List[ResourceInput]) -> List[ResourceInput]:
+        ids = [r.id for r in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate resource ID detected. Resource IDs must be unique.")
+        return v
 
 
 class SimulationResponse(BaseModel):
@@ -55,3 +71,10 @@ class SimulationStepResponse(BaseModel):
     terminated_processes: List[str] = Field(default_factory=list)
     metrics: Dict
     gantt_entry: Dict
+
+
+class PolicyUpdateRequest(BaseModel):
+    algorithm: str = Field(..., description="FCFS, SJF, SRTF, ROUND_ROBIN, PRIORITY")
+    time_quantum: int = Field(default=2, ge=1)
+    is_preemptive: bool = Field(default=False)
+    aging_interval: Optional[int] = Field(default=None, ge=1)

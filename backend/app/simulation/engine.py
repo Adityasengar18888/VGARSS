@@ -86,6 +86,37 @@ class SimulationEngine:
             and self.running_process is None
         )
 
+    def reset(self) -> None:
+        """Resets the simulation engine state cleanly to tick 0."""
+        self.current_tick = 0
+        self.busy_ticks = 0
+        self.idle_ticks = 0
+        self.current_quantum_ticks = 0
+        self.running_process = None
+        self.ready_queue = []
+        self.waiting_queue = []
+        self.terminated_processes = []
+        self.new_processes = []
+        self.gantt_chart = []
+
+        # Reset all PCB instances to initial state
+        for pcb in self._pcb_lookup.values():
+            pcb.state = ProcessState.NEW
+            pcb.remaining_time = pcb.burst_time
+            pcb.start_time = None
+            pcb.completion_time = None
+            pcb.waiting_time = 0
+            pcb.turnaround_time = 0
+            pcb.response_time = 0
+            if pcb.arrival_time <= 0:
+                pcb.state = ProcessState.READY
+                self.ready_queue.append(pcb)
+            else:
+                self.new_processes.append(pcb)
+
+        if self.resource_manager:
+            self.resource_manager.reset()
+
     def step(self) -> SimulationSnapshot:
         """Executes a single discrete simulation tick (from current_tick to current_tick + 1)."""
         # 1. Admit new arrivals whose arrival_time <= current_tick

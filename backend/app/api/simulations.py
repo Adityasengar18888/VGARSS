@@ -10,6 +10,8 @@ from backend.app.schemas.simulation import (
     SimulationCreate,
     SimulationResponse,
     SimulationStepResponse,
+    PolicyUpdateRequest,
+    ProcessInput,
 )
 from backend.app.simulation.models import ProcessDefinition
 from backend.app.simulation.schedulers import (
@@ -24,6 +26,7 @@ from backend.app.simulation.resources import (
     ResourceType,
 )
 from backend.app.simulation.engine import SimulationEngine
+from backend.app.network import connection_manager, EventType
 
 router = APIRouter(prefix="/api/v1/groups/{group_id}/simulations", tags=["Simulations"])
 
@@ -145,6 +148,20 @@ def create_simulation(
             )
 
     engine = load_or_reconstruct_engine(sim_id, db)
+
+    connection_manager.broadcast(
+        group_id=group_id,
+        event_type=EventType.SIMULATION_CREATED.value,
+        simulation_id=sim_id,
+        payload={
+            "simulation_id": sim_id,
+            "name": payload.name,
+            "algorithm": payload.algorithm.upper(),
+            "time_quantum": payload.time_quantum,
+            "total_processes": len(payload.processes),
+            "total_resources": len(payload.resources),
+        },
+    )
 
     return SimulationResponse(
         id=sim_id,
@@ -284,6 +301,8 @@ def step_simulation(
         # Update process states in SQLite
         for pid in snapshot.ready_queue:
             db.execute("UPDATE simulation_processes SET state = 'READY' WHERE simulation_id = ? AND id = ?", (sim_id, pid))
+        for pid in snapshot.waiting_queue:
+            db.execute("UPDATE simulation_processes SET state = 'WAITING' WHERE simulation_id = ? AND id = ?", (sim_id, pid))
         if snapshot.running_process_id:
             pcb = engine.get_pcb(snapshot.running_process_id)
             if pcb:
@@ -325,6 +344,35 @@ def step_simulation(
                 json.dumps(snapshot.terminated_processes),
                 snapshot.gantt_entry.state,
             ),
+        )
+
+    step_payload = {
+        "simulation_id": sim_id,
+        "tick": snapshot.tick,
+        "status": sim_status,
+        "running_process_id": snapshot.running_process_id,
+        "ready_queue": snapshot.ready_queue,
+        "waiting_queue": snapshot.waiting_queue,
+        "terminated_processes": snapshot.terminated_processes,
+        "metrics": metrics.model_dump(),
+        "gantt_entry": snapshot.gantt_entry.model_dump(),
+    }
+    connection_manager.broadcast(
+        group_id=group_id,
+        event_type=EventType.SIMULATION_STEP.value,
+        simulation_id=sim_id,
+        payload=step_payload,
+    )
+    if sim_status == "COMPLETED":
+        connection_manager.broadcast(
+            group_id=group_id,
+            event_type=EventType.SIMULATION_COMPLETED.value,
+            simulation_id=sim_id,
+            payload={
+                "simulation_id": sim_id,
+                "final_tick": snapshot.tick,
+                "metrics": metrics.model_dump(),
+            },
         )
 
     return SimulationStepResponse(
@@ -397,4 +445,198 @@ def play_simulation_to_completion(
                 (p.start_time, p.completion_time, p.waiting_time, p.turnaround_time, p.response_time, sim_id, p.id),
             )
 
+    connection_manager.broadcast(
+        group_id=group_id,
+        event_type=EventType.SIMULATION_COMPLETED.value,
+        simulation_id=sim_id,
+        payload={
+            "simulation_id": sim_id,
+            "final_tick": engine.current_tick,
+            "metrics": metrics.model_dump(),
+        },
+    )
+
     return get_simulation(group_id, sim_id, group, db)
+
+
+@router.post("/{sim_id}/reset", response_model=SimulationResponse)
+def reset_simulation(
+    group_id: str,
+    sim_id: str,
+    group: dict = Depends(require_group_access),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Resets a simulation run to initial tick 0, clears history and restores processes."""
+    engine = load_or_reconstruct_engine(sim_id, db)
+    engine.reset()
+
+    with db:
+        db.execute(
+            """
+            UPDATE simulations SET
+                current_tick = 0,
+                busy_ticks = 0,
+                idle_ticks = 0,
+                cpu_utilization = 0.0,
+                avg_waiting_time = 0.0,
+                avg_turnaround_time = 0.0,
+                avg_response_time = 0.0,
+                throughput = 0.0,
+                status = 'INITIALIZED',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (sim_id,),
+        )
+        db.execute(
+            """
+            UPDATE simulation_processes SET
+                state = CASE WHEN arrival_time <= 0 THEN 'READY' ELSE 'NEW' END,
+                remaining_time = burst_time,
+                start_time = NULL,
+                completion_time = NULL,
+                waiting_time = 0,
+                turnaround_time = 0,
+                response_time = 0
+            WHERE simulation_id = ?
+            """,
+            (sim_id,),
+        )
+        db.execute(
+            """
+            UPDATE simulation_resources SET
+                available_units = total_capacity,
+                exclusive_holder = NULL
+            WHERE simulation_id = ?
+            """,
+            (sim_id,),
+        )
+        db.execute("DELETE FROM simulation_history WHERE simulation_id = ?", (sim_id,))
+
+    connection_manager.broadcast(
+        group_id=group_id,
+        event_type=EventType.SIMULATION_RESET.value,
+        simulation_id=sim_id,
+        payload={"simulation_id": sim_id, "status": "INITIALIZED", "tick": 0},
+    )
+
+    return get_simulation(group_id, sim_id, group, db)
+
+
+@router.put("/{sim_id}/policy", response_model=SimulationResponse)
+def update_simulation_policy(
+    group_id: str,
+    sim_id: str,
+    payload: PolicyUpdateRequest,
+    group: dict = Depends(require_group_access),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Updates the scheduling policy algorithm, time quantum, and preemption settings."""
+    engine = load_or_reconstruct_engine(sim_id, db)
+
+    algo = payload.algorithm.upper()
+    if algo == "FCFS":
+        sched = FCFSScheduler()
+    elif algo == "SJF":
+        sched = SJFScheduler(is_preemptive=False)
+    elif algo == "SRTF":
+        sched = SJFScheduler(is_preemptive=True)
+    elif algo == "ROUND_ROBIN":
+        sched = RoundRobinScheduler(time_quantum=payload.time_quantum)
+    elif "PRIORITY" in algo:
+        sched = PriorityScheduler(
+            is_preemptive=payload.is_preemptive,
+            aging_interval=payload.aging_interval,
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported algorithm '{payload.algorithm}'",
+        )
+
+    engine.scheduler = sched
+
+    with db:
+        db.execute(
+            """
+            UPDATE simulations SET
+                algorithm = ?,
+                time_quantum = ?,
+                is_preemptive = ?,
+                aging_interval = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (algo, payload.time_quantum, 1 if payload.is_preemptive else 0, payload.aging_interval, sim_id),
+        )
+
+    connection_manager.broadcast(
+        group_id=group_id,
+        event_type=EventType.SIMULATION_POLICY_CHANGED.value,
+        simulation_id=sim_id,
+        payload={
+            "simulation_id": sim_id,
+            "algorithm": algo,
+            "time_quantum": payload.time_quantum,
+            "is_preemptive": payload.is_preemptive,
+        },
+    )
+
+    return get_simulation(group_id, sim_id, group, db)
+
+
+@router.post("/{sim_id}/processes", status_code=status.HTTP_201_CREATED)
+def add_simulation_process(
+    group_id: str,
+    sim_id: str,
+    payload: ProcessInput,
+    group: dict = Depends(require_group_access),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Dynamically submits a new task / process to an active simulation."""
+    engine = load_or_reconstruct_engine(sim_id, db)
+
+    p_def = ProcessDefinition(
+        id=payload.id,
+        arrival_time=payload.arrival_time,
+        burst_time=payload.burst_time,
+        priority=payload.priority,
+    )
+
+    try:
+        pcb = engine.add_process(p_def)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    with db:
+        db.execute(
+            """
+            INSERT INTO simulation_processes (
+                id, simulation_id, arrival_time, burst_time, remaining_time, priority, state
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (pcb.id, sim_id, pcb.arrival_time, pcb.burst_time, pcb.remaining_time, pcb.priority, pcb.state.value),
+        )
+
+    connection_manager.broadcast(
+        group_id=group_id,
+        event_type=EventType.PROCESS_ADMITTED.value,
+        simulation_id=sim_id,
+        payload={
+            "simulation_id": sim_id,
+            "process_id": pcb.id,
+            "arrival_time": pcb.arrival_time,
+            "burst_time": pcb.burst_time,
+            "priority": pcb.priority,
+            "state": pcb.state.value,
+        },
+    )
+
+    return {
+        "id": pcb.id,
+        "simulation_id": sim_id,
+        "arrival_time": pcb.arrival_time,
+        "burst_time": pcb.burst_time,
+        "priority": pcb.priority,
+        "state": pcb.state.value,
+    }

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4055A8"/>
+      <stop offset="100%" stop-color="#2D3E82"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Container -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+
+  <!-- Synchronous Orbital Track -->
+  <circle cx="256" cy="256" r="172" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-opacity="0.2" stroke-dasharray="8 6"/>
+
+  <!-- Bus Lines connecting center to nodes -->
+  <line x1="256" y1="256" x2="378" y2="134" stroke="#FFFFFF" stroke-width="4" stroke-opacity="0.6"/>
+  <line x1="256" y1="256" x2="134" y2="134" stroke="#FFFFFF" stroke-width="4" stroke-opacity="0.6"/>
+  <line x1="256" y1="256" x2="134" y2="378" stroke="#FFFFFF" stroke-width="4" stroke-opacity="0.6"/>
+  <line x1="256" y1="256" x2="378" y2="378" stroke="#FFFFFF" stroke-width="4" stroke-opacity="0.6"/>
+
+  <!-- Central Microkernel Die / Shield -->
+  <rect x="180" y="180" width="152" height="152" rx="36" fill="#FFFFFF" stroke="#38BDF8" stroke-width="6" filter="url(#softShadow)"/>
+
+  <!-- VGARSS Monogram 'V' -->
+  <polygon points="208,206 230,206 256,278 282,206 304,206 270,306 242,306" fill="#4055A8"/>
+
+  <!-- Synchronized Satellite Nodes -->
+  <!-- 1. Running (Emerald) -->
+  <circle cx="378" cy="134" r="26" fill="#16805D" stroke="#FFFFFF" stroke-width="4"/>
+  <circle cx="378" cy="134" r="10" fill="#FFFFFF"/>
+
+  <!-- 2. Telemetry (Cyan) -->
+  <circle cx="134" cy="134" r="26" fill="#38BDF8" stroke="#FFFFFF" stroke-width="4"/>
+  <circle cx="134" cy="134" r="10" fill="#FFFFFF"/>
+
+  <!-- 3. Scheduling / Ready (Amber) -->
+  <circle cx="134" cy="378" r="26" fill="#B7791F" stroke="#FFFFFF" stroke-width="4"/>
+  <circle cx="134" cy="378" r="10" fill="#FFFFFF"/>
+
+  <!-- 4. Mutex / Lock (White) -->
+  <circle cx="378" cy="378" r="26" fill="#FFFFFF" stroke="#4055A8" stroke-width="4"/>
+  <circle cx="378" cy="378" r="10" fill="#4055A8"/>
+</svg>

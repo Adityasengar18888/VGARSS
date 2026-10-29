@@ -15,6 +15,7 @@ from backend.app.simulation.resources.models import (
     ResourceMode,
     ResourceError,
 )
+from backend.app.network import connection_manager, EventType
 
 router = APIRouter(prefix="/api/v1/groups/{group_id}/simulations/{sim_id}/resources", tags=["Resource Coordination"])
 
@@ -67,11 +68,41 @@ def acquire_resource(
             mode=mode,
             units=payload.units,
         )
+        status_str = "ACQUIRED" if granted else "BLOCKED_WAITING"
+        event_type = EventType.RESOURCE_ACQUIRED.value if granted else EventType.RESOURCE_BLOCKED.value
+
+        # Persist updated state to SQLite
+        with db:
+            if granted and engine.resource_manager:
+                res_obj = engine.resource_manager.get_resource(payload.resource_id)
+                db.execute(
+                    "UPDATE simulation_resources SET available_units = ?, exclusive_holder = ? WHERE simulation_id = ? AND id = ?",
+                    (res_obj.available_units, res_obj.exclusive_holder, sim_id, payload.resource_id),
+                )
+            elif not granted:
+                db.execute(
+                    "UPDATE simulation_processes SET state = 'WAITING' WHERE simulation_id = ? AND id = ?",
+                    (sim_id, payload.process_id),
+                )
+
+        connection_manager.broadcast(
+            group_id=group_id,
+            event_type=event_type,
+            simulation_id=sim_id,
+            payload={
+                "granted": granted,
+                "process_id": payload.process_id,
+                "resource_id": payload.resource_id,
+                "mode": payload.mode.upper(),
+                "units": payload.units,
+                "status": status_str,
+            },
+        )
         return {
             "granted": granted,
             "process_id": payload.process_id,
             "resource_id": payload.resource_id,
-            "status": "ACQUIRED" if granted else "BLOCKED_WAITING",
+            "status": status_str,
         }
     except ResourceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -93,6 +124,35 @@ def release_resource(
             process_id=payload.process_id,
             resource_id=payload.resource_id,
             units=payload.units,
+        )
+        # Persist updated state to SQLite
+        with db:
+            if engine.resource_manager:
+                try:
+                    res_obj = engine.resource_manager.get_resource(payload.resource_id)
+                    db.execute(
+                        "UPDATE simulation_resources SET available_units = ?, exclusive_holder = ? WHERE simulation_id = ? AND id = ?",
+                        (res_obj.available_units, res_obj.exclusive_holder, sim_id, payload.resource_id),
+                    )
+                except Exception:
+                    pass
+            for pid in awakened:
+                db.execute(
+                    "UPDATE simulation_processes SET state = 'READY' WHERE simulation_id = ? AND id = ?",
+                    (sim_id, pid),
+                )
+
+        connection_manager.broadcast(
+            group_id=group_id,
+            event_type=EventType.RESOURCE_RELEASED.value,
+            simulation_id=sim_id,
+            payload={
+                "released": True,
+                "process_id": payload.process_id,
+                "resource_id": payload.resource_id,
+                "units": payload.units,
+                "awakened_processes": awakened,
+            },
         )
         return {
             "released": True,
@@ -118,6 +178,17 @@ def check_simulation_deadlock(
 
     cycle = engine.resource_manager.check_deadlock()
     if cycle:
+        connection_manager.broadcast(
+            group_id=group_id,
+            event_type=EventType.DEADLOCK_DETECTED.value,
+            simulation_id=sim_id,
+            payload={
+                "deadlock_detected": True,
+                "cycle_processes": cycle.processes,
+                "involved_resources": cycle.involved_resources,
+                "description": cycle.description,
+            },
+        )
         return DeadlockStatusResponse(
             deadlock_detected=True,
             cycle_processes=cycle.processes,

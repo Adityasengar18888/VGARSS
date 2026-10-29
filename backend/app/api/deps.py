@@ -2,7 +2,7 @@
 import sqlite3
 import datetime
 from typing import Optional
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Security, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.app.database import get_db
 
@@ -10,16 +10,19 @@ security_bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Security(security_bearer),
     token: Optional[str] = None,
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    """Authenticates user via Bearer token or query parameter. Never exposes password hash."""
+    """Authenticates user via Bearer token, HttpOnly cookie, or query parameter. Never exposes password hash."""
     session_token = None
-    if credentials:
+    if credentials and credentials.credentials:
         session_token = credentials.credentials
     elif token:
         session_token = token
+    elif request.cookies.get("vgarss_session"):
+        session_token = request.cookies.get("vgarss_session")
 
     if not session_token:
         raise HTTPException(

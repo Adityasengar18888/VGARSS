@@ -1,0 +1,83 @@
+# ==============================================================================
+# VGARSS 2.0 — Production Docker Compose Orchestration
+# ------------------------------------------------------------------------------
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
+# ==============================================================================
+services:
+  # ----------------------------------------------------------------------------
+  # 1. PostgreSQL 16 Relational Persistence with WAL & Persistent Volume
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vgarss_db}
+      POSTGRES_USER: ${POSTGRES_USER:-vgarss_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_this_postgres_password_in_prod}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vgarss_admin} -d ${POSTGRES_DB:-vgarss_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vgarss-internal
+
+  # ----------------------------------------------------------------------------
+  # 2. FastAPI ASGI Backend with WebSockets (/ws/v2) & Authoritative Scheduler
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      VGARSS_ENV: production
+      PORT: 8000
+      SECRET_KEY: ${SECRET_KEY:-generate_a_cryptographically_secure_random_key_here}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vgarss_admin}:${POSTGRES_PASSWORD:-change_this_postgres_password_in_prod}@db:5432/${POSTGRES_DB:-vgarss_db}
+      VGARSS_CORS_ORIGINS: ${VGARSS_CORS_ORIGINS:-http://localhost,http://localhost:80,http://127.0.0.1}
+      VGARSS_SCHEDULER_WORKER: "true"
+      VGARSS_SCHEDULER_INTERVAL: "1.0"
+      VGARSS_SCHEDULER_LOCK_TTL: "5.0"
+      VGARSS_ENABLE_TCP: "false"
+      VGARSS_TRUST_PROXY_HEADERS: "true"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks:
+      - vgarss-internal
+      - vgarss-public
+
+  # ----------------------------------------------------------------------------
+  # 3. High-Performance Static Frontend Nginx Container
+  # ----------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_WS_URL: ${VITE_WS_URL:-}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - vgarss-public
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  vgarss-internal:
+    internal: true
+  vgarss-public:
+    driver: bridge
+

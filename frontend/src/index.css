@@ -1,29 +1,145 @@
 @import "tailwindcss";
 
 :root {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: dark;
+  /* Font Families: Maximum Two */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  font-family: var(--font-sans);
+  color-scheme: light;
+
+  /* Brand Color (Reserved for Primary Actions and Focus Only) */
+  --color-brand: #4055A8;
+  --color-brand-hover: #334488;
+  --color-brand-focus: #556CD6;
+  --color-brand-light: #EEF2FF;
+
+  /* Restrained Clean Surfaces (Single Neutral Family: Slate/Gray) */
+  --color-bg-canvas: #F5F6F8;
+  --color-bg-surface: #FFFFFF;
+  --color-bg-elevated: #F8FAFC;
+  --color-bg-input: #FFFFFF;
+
+  /* Ink Color for Text (WCAG AA/AAA compliant) */
+  --color-ink-primary: #202631;
+  --color-ink-subtle: #475467;
+  --color-ink-muted: #667085;
+  --color-ink-disabled: #98A2B3;
+
+  /* Borders & Dividers */
+  --color-border: #E4E7EC;
+  --color-border-subtle: #F2F4F7;
+  --color-border-focus: #4055A8;
+
+  /* Status Tokens */
+  --color-success: #16805D;
+  --color-warning: #B7791F;
+  --color-error: #C0393A;
+
+  /* Motion Timing (Under 300ms, ease-out) */
+  --motion-duration-fast: 150ms;
+  --motion-duration-normal: 200ms;
+  --motion-easing: cubic-bezier(0, 0, 0.2, 1);
 }
 
-code, pre, .font-mono {
-  font-family: 'JetBrains Mono', monospace;
+/* Global Typography Constraints */
+body {
+  background-color: var(--color-bg-canvas);
+  color: var(--color-ink-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Custom scrollbars for dark developer console */
+/* Body text length constraint: Max 65 characters per line */
+p, .body-text {
+  max-width: 65ch;
+}
+
+/* Bold for emphasis, never italic */
+i, em, .italic {
+  font-style: normal !important;
+  font-weight: 600;
+}
+
+/* Underline strictly reserved for links */
+a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+button, [role="button"], span, div, h1, h2, h3, h4, h5, h6 {
+  text-decoration: none;
+}
+
+/* Tabular figures for changing numbers and monospace telemetry */
+code, pre, .font-mono, [data-tabular="true"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Interactive Elements: Focus Visible & Press Feedback */
+button, [role="button"], a, input, select {
+  transition: transform var(--motion-duration-fast) var(--motion-easing),
+              opacity var(--motion-duration-fast) var(--motion-easing);
+  position: relative;
+}
+
+/* 44px Minimum Touch Target Guarantee */
+button::after, [role="button"]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 44px;
+  min-height: 44px;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+}
+
+button:active, [role="button"]:active {
+  transform: scale(0.97);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-focus);
+  outline-offset: 2px;
+}
+
+/* Prefers-Reduced-Motion Fallback */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  button:active, [role="button"]:active {
+    transform: none !important;
+  }
+}
+
+/* Custom scrollbars for clean light surface */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #090d16;
+  background: var(--color-bg-canvas);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 4px;
+  background: #D0D5DD;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #98A2B3;
 }

@@ -23,7 +23,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 frontend/dist/
+frontend/dev-dist/
 frontend/build/
+*.tsbuildinfo
 
 # Local Persistence & Data
 *.db
@@ -40,6 +42,9 @@ vgarss.db
 # Logs & Temporary Files
 logs/
 *.log
+backups/
+*.sql.gz
+*.db.gz
 scratch/
 temp/
 tmp/

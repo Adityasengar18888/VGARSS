@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#4055A8" />
+  <title>Offline — VGARSS</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #F5F6F8;
+      color: #202631;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+      padding-top: calc(1.5rem + env(safe-area-inset-top));
+      padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    }
+    .card {
+      background: #FFFFFF;
+      border: 1px solid #E4E7EC;
+      border-radius: 1rem;
+      padding: 2.25rem 2rem;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 1px 3px 0 rgba(16, 24, 40, 0.05);
+    }
+    .icon-container {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 1.5rem;
+      border-radius: 1rem;
+      background: #F0F2F5;
+      border: 1px solid #E4E7EC;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: monospace;
+      background: #FEF3F2;
+      color: #B42318;
+      border: 1px solid #FECDCA;
+      margin-bottom: 1rem;
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #B42318;
+    }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #202631;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+    p {
+      font-size: 0.875rem;
+      color: #667085;
+      line-height: 1.5;
+      margin-bottom: 1.75rem;
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 0.75rem 1.25rem;
+      background: #4055A8;
+      color: #FFFFFF;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s ease;
+      touch-action: manipulation;
+    }
+    .btn:hover {
+      background: #34468B;
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    .footer-note {
+      font-size: 0.75rem;
+      color: #98A2B3;
+      margin-top: 1.25rem;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <img src="/icons/icon.svg" alt="VGARSS" width="40" height="40" />
+    </div>
+
+    <div class="badge">
+      <span class="dot"></span>
+      <span>OFFLINE</span>
+    </div>
+
+    <h1>No Network Connection</h1>
+    <p>
+      VGARSS real-time messaging, task synchronization, and scheduling engine require an active network connection. The application will automatically resume when connectivity is restored.
+    </p>
+
+    <button class="btn" onclick="window.location.reload()">
+      Check Connection & Retry
+    </button>
+
+    <div class="footer-note">
+      Virtual Group Real-Time Sync & Scheduling
+    </div>
+  </div>
+
+  <script>
+    // Automatically reload as soon as network returns
+    window.addEventListener('online', function() {
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>
+

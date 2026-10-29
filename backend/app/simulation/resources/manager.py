@@ -179,3 +179,14 @@ class ResourceManager:
             if rec.resource_id in self.resources:
                 ranks.add(self.resources[rec.resource_id].order_rank)
         return ranks
+
+    def reset(self) -> None:
+        """Resets all resources to initial capacity and clears all allocations and wait queues."""
+        with self._manager_lock:
+            for res in self.resources.values():
+                res.available_units = res.total_capacity
+                res.exclusive_holder = None
+                res.shared_holders.clear()
+                res.wait_queue.clear()
+            self.active_allocations.clear()
+            self.wait_for_graph = WaitForGraph()

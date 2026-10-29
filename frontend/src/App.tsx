@@ -1,343 +1,952 @@
-import { useState, useEffect } from 'react';
-import {
-  Activity,
-  Cpu,
-  Network,
-  ShieldCheck,
-  Server,
-  RefreshCw,
-  Terminal,
-  Lock,
-  Layers,
-  CheckCircle2,
-  PlayCircle,
-  PauseCircle,
-  RotateCcw
-} from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { api } from './services/api';
+import { useSimulation } from './hooks/useSimulation';
+import { useChatWebSocket } from './hooks/useChatWebSocket';
+import { useMessageLifecycle } from './hooks/useMessageLifecycle';
+import { ServerSidebar } from './components/chat/ServerSidebar';
+import { ChannelSidebar, SystemViewTab } from './components/chat/ChannelSidebar';
+import { MainConversationPanel } from './components/chat/MainConversationPanel';
+import { RightDrawer } from './components/chat/RightDrawer';
+import { TaskCreationModal } from './components/chat/TaskCreationModal';
+import { CreateWorkspaceModal } from './components/chat/CreateWorkspaceModal';
+import { CreateChannelModal } from './components/chat/CreateChannelModal';
+import { InviteMemberModal } from './components/chat/InviteMemberModal';
+import { SearchModal } from './components/chat/SearchModal';
+import { ProfileModal } from './components/chat/ProfileModal';
+import { WorkspaceSettingsModal } from './components/chat/WorkspaceSettingsModal';
+import { TaskDetailModal } from './components/chat/TaskDetailModal';
+import { JoinWorkspaceModal } from './components/chat/JoinWorkspaceModal';
+import { AuthScreen } from './components/chat/AuthScreen';
 
-interface HealthData {
-  status: string;
-  version: string;
-  timestamp: string;
-  environment: string;
-  ports: {
-    rest_api: number;
-    websocket: number;
-    raw_tcp: number;
-  };
-}
+import { ProcessSchedulerView } from './views/ProcessSchedulerView';
+import { ResourceMonitorView } from './views/ResourceMonitorView';
+import { DeadlockLabView } from './views/DeadlockLabView';
+import { NetworkMonitorView } from './views/NetworkMonitorView';
+import { PerformanceAnalyticsView } from './views/PerformanceAnalyticsView';
+
+import {
+  Workspace,
+  Channel,
+  DirectConversation,
+  ChatMessage,
+  TaskItem,
+  WorkspaceMember,
+  UserProfile,
+  WorkspaceResource,
+} from './types/chat';
+import { ResourceStatus } from './types/resources';
+import { ConnectionStatus } from './types/network';
+import { LoadingState, ErrorState } from './components/common/States';
+import { Menu, MessageSquare, Cpu, Layers, Activity, BarChart2 } from 'lucide-react';
 
 export default function App() {
-  const [health, setHealth] = useState<HealthData | null>(null);
-  const [apiLatency, setApiLatency] = useState<number | null>(null);
-  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const [wsLogs, setWsLogs] = useState<string[]>([]);
-  const [selectedAlgo, setSelectedAlgo] = useState<string>('ROUND_ROBIN');
+  // Navigation & View States
+  const getInitialTab = (): SystemViewTab => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab && ['chat', 'scheduler', 'resources', 'deadlock', 'network', 'analytics'].includes(tab)) {
+      return tab as SystemViewTab;
+    }
+    return 'chat';
+  };
+  const [activeViewTab, setActiveViewTab] = useState<SystemViewTab>(getInitialTab);
+  const [isRightDrawerOpen, setIsRightDrawerOpen] = useState(true);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Check Backend Health
-  const checkHealth = async () => {
-    setApiStatus('checking');
-    const startTime = performance.now();
+  // Entities & Auth
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
+  const [dms, setDms] = useState<DirectConversation[]>([]);
+  const [activeDm, setActiveDm] = useState<DirectConversation | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [resources, setResources] = useState<ResourceStatus[]>([]);
+  const [workspaceResources, setWorkspaceResources] = useState<WorkspaceResource[]>([]);
+
+  // Modals & Invitation States
+  const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get('invite');
+  });
+  const [isCreateWsOpen, setIsCreateWsOpen] = useState(false);
+  const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [taskModalInitial, setTaskModalInitial] = useState<{ title?: string; messageId?: string }>({});
+  const [selectedTaskForDetail, setSelectedTaskForDetail] = useState<TaskItem | null>(null);
+  const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // System & Connection States
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [apiLatency, setApiLatency] = useState<number | null>(null);
+
+  // Simulation Controls & Telemetry Hook
+  const sim = useSimulation(activeWorkspace?.id || null);
+
+  // Real-Time Chat WebSocket Hook & Neural Transmission Lifecycle
+  const activeTargetId = activeChannel ? activeChannel.id : activeDm ? activeDm.id : null;
+  const sendWsEventRef = useRef<((evt: any) => boolean) | null>(null);
+
+  const messageLifecycle = useMessageLifecycle({
+    currentUserId: currentUser?.id,
+    onSendEvent: (evt) => (sendWsEventRef.current ? sendWsEventRef.current(evt) : false),
+  });
+
+  const chatWs = useChatWebSocket({
+    token: api.token,
+    workspaceId: activeWorkspace?.id || null,
+    activeTargetId,
+    onReceiptEvent: (receiptEvt) => {
+      messageLifecycle.handleReceiptUpdate(receiptEvt);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === receiptEvt.message_id
+            ? {
+                ...m,
+                delivery_status: receiptEvt.status === 'read' ? 'READ' : 'DELIVERED',
+              }
+            : m
+        )
+      );
+    },
+    onMessageReceived: (newMsg) => {
+      setMessages((prev) => {
+        // Prevent duplicate appending
+        if (prev.some((m) => m.id === newMsg.id || (m.client_msg_id && m.client_msg_id === newMsg.client_msg_id))) {
+          return prev.map((m) => (m.client_msg_id === newMsg.client_msg_id ? newMsg : m));
+        }
+        return [...prev, newMsg];
+      });
+
+      // Recipient auto-acknowledges receipt
+      messageLifecycle.acknowledgeIncomingMessage(newMsg, activeViewTab === 'chat');
+    },
+    onPresenceUpdate: (userId, presenceState) => {
+      setMembers((prev) =>
+        prev.map((m) => (m.user_id === userId ? { ...m, presence_state: presenceState as any } : m))
+      );
+      setDms((prev) =>
+        prev.map((d) =>
+          d.recipient.id === userId
+            ? { ...d, recipient: { ...d.recipient, presence_state: presenceState as any } }
+            : d
+        )
+      );
+    },
+    onTaskEvent: (taskData) => {
+      setTasks((prev) => {
+        const idx = prev.findIndex((t) => t.id === taskData.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], ...taskData };
+          return updated;
+        }
+        return [taskData, ...prev];
+      });
+    },
+  });
+
+  useEffect(() => {
+    sendWsEventRef.current = chatWs.sendEvent;
+  }, [chatWs.sendEvent]);
+
+  // Health and Latency Check
+  const checkHealth = useCallback(async () => {
+    const start = performance.now();
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/health');
-      const latency = Math.round(performance.now() - startTime);
-      if (res.ok) {
-        const data = await res.json();
-        setHealth(data);
-        setApiLatency(latency);
-        setApiStatus('connected');
+      await api.getHealth();
+      setApiLatency(Math.round(performance.now() - start));
+    } catch {
+      setApiLatency(null);
+    }
+  }, []);
+
+  // Fetch Messages for active channel or DM
+  const fetchMessages = useCallback(async (targetChannelId?: string, targetDmId?: string) => {
+    try {
+      if (targetChannelId) {
+        const page = await api.getChannelMessages(targetChannelId, 50);
+        setMessages(page.messages);
+        setHasMoreMessages(page.has_more);
+        // Acknowledge read for unread peer messages
+        if (currentUser?.id && page.messages) {
+          for (const m of page.messages) {
+            if (m.sender_id && m.sender_id !== currentUser.id && m.delivery_status !== 'READ') {
+              sendWsEventRef.current?.({
+                type: 'MESSAGE_READ',
+                message_id: m.id,
+                channel_id: m.channel_id,
+                conversation_id: m.conversation_id,
+              });
+            }
+          }
+        }
+      } else if (targetDmId) {
+        const page = await api.getDmMessages(targetDmId, 50);
+        setMessages(page.messages);
+        setHasMoreMessages(page.has_more);
+        if (currentUser?.id && page.messages) {
+          for (const m of page.messages) {
+            if (m.sender_id && m.sender_id !== currentUser.id && m.delivery_status !== 'READ') {
+              sendWsEventRef.current?.({
+                type: 'MESSAGE_READ',
+                message_id: m.id,
+                channel_id: m.channel_id,
+                conversation_id: m.conversation_id,
+              });
+            }
+          }
+        }
       } else {
-        setApiStatus('disconnected');
+        setMessages([]);
+        setHasMoreMessages(false);
       }
     } catch {
-      setApiStatus('disconnected');
-      setApiLatency(null);
+      setMessages([]);
+    }
+  }, [currentUser?.id]);
+
+  // Load older messages
+  const handleLoadOlder = async () => {
+    if (messages.length === 0) return;
+    const oldestId = messages[0].id;
+    try {
+      if (activeChannel) {
+        const page = await api.getChannelMessages(activeChannel.id, 50, oldestId);
+        setMessages((prev) => [...page.messages, ...prev]);
+        setHasMoreMessages(page.has_more);
+      } else if (activeDm) {
+        const page = await api.getDmMessages(activeDm.id, 50, oldestId);
+        setMessages((prev) => [...page.messages, ...prev]);
+        setHasMoreMessages(page.has_more);
+      }
+    } catch {
+      // ignore
     }
   };
 
-  // Connect WebSocket
-  useEffect(() => {
-    checkHealth();
-    let socket: WebSocket | null = null;
+  // Fetch Workspace details: channels, dms, members, tasks, resources
+  const refreshWorkspaceData = useCallback(async (wsId: string) => {
     try {
-      socket = new WebSocket('ws://127.0.0.1:8000/ws');
-      socket.onopen = () => {
-        setWsStatus('connected');
-        setWsLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] WebSocket Handshake Succeeded (/ws)`]);
-      };
-      socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          setWsLogs((prev) => [...prev.slice(-8), `[${new Date().toLocaleTimeString()}] Telemetry: ${msg.event || 'DATA'}`]);
-        } catch {
-          setWsLogs((prev) => [...prev.slice(-8), `[${new Date().toLocaleTimeString()}] Raw: ${event.data}`]);
-        }
-      };
-      socket.onerror = () => {
-        setWsStatus('disconnected');
-      };
-      socket.onclose = () => {
-        setWsStatus('disconnected');
-      };
-    } catch {
-      setWsStatus('disconnected');
-    }
+      const [chList, dmList, memList, tskList, wsResList] = await Promise.all([
+        api.listWorkspaceChannels(wsId),
+        api.listDms(wsId),
+        api.listWorkspaceMembers(wsId),
+        api.listTasks(wsId),
+        api.listWorkspaceResources(wsId).catch(() => []),
+      ]);
 
-    return () => {
-      if (socket) socket.close();
-    };
-  }, []);
+      setChannels(chList);
+      setDms(dmList);
+      setMembers(memList);
+      setTasks(tskList);
+      setWorkspaceResources(wsResList);
+
+      // Select general channel by default if none selected
+      if (chList.length > 0) {
+        const general = chList.find((c) => c.name === 'general') || chList[0];
+        setActiveChannel(general);
+        setActiveDm(null);
+        fetchMessages(general.id);
+      }
+    } catch {
+      // ignore
+    }
+  }, [fetchMessages]);
+
+  // Initial System Bootstrap
+  const bootstrap = useCallback(async () => {
+    setBootstrapping(true);
+    setBootstrapError(null);
+    try {
+      await checkHealth();
+
+      let user: UserProfile | null = null;
+      if (api.token) {
+        try {
+          user = await api.getProfile();
+        } catch {
+          api.setToken(null);
+        }
+      }
+
+      // If no valid session, auto-authenticate with Alice default identity
+      if (!user) {
+        const authRes = await api.devSwitchUser('alice');
+        user = authRes.user;
+      }
+
+      setCurrentUser(user);
+
+      const wsList = await api.listWorkspaces();
+      setWorkspaces(wsList);
+
+      if (wsList.length > 0) {
+        const primary = wsList[0];
+        setActiveWorkspace(primary);
+        await refreshWorkspaceData(primary.id);
+      } else {
+        // Create initial production workspace if empty
+        const defaultWs = await api.createWorkspace({
+          name: 'VGARSS Core Engineering',
+          description: 'Production Systems Collaboration & Scheduling Workspace',
+        });
+        setWorkspaces([defaultWs]);
+        setActiveWorkspace(defaultWs);
+        await refreshWorkspaceData(defaultWs.id);
+      }
+    } catch (err: any) {
+      setBootstrapError(err.message || 'Failed to initialize link to VGARSS 2.0 backend.');
+    } finally {
+      setBootstrapping(false);
+    }
+  }, [checkHealth, refreshWorkspaceData]);
+
+  useEffect(() => {
+    bootstrap();
+  }, [bootstrap]);
+
+  // Switch Workspace
+  const handleSelectWorkspace = async (wsId: string) => {
+    const ws = workspaces.find((w) => w.id === wsId);
+    if (!ws) return;
+    setActiveWorkspace(ws);
+    await refreshWorkspaceData(ws.id);
+    setIsMobileNavOpen(false);
+  };
+
+  // Select Channel
+  const handleSelectChannel = (channelId: string) => {
+    const ch = channels.find((c) => c.id === channelId);
+    if (!ch) return;
+    setActiveChannel(ch);
+    setActiveDm(null);
+    fetchMessages(ch.id);
+    api.markChannelRead(ch.id).catch(() => {});
+    setIsMobileNavOpen(false);
+  };
+
+  // Select DM
+  const handleSelectDm = (dmId: string) => {
+    const dm = dms.find((d) => d.id === dmId);
+    if (!dm) return;
+    setActiveDm(dm);
+    setActiveChannel(null);
+    fetchMessages(undefined, dm.id);
+    api.markDmRead(dm.id).catch(() => {});
+    setIsMobileNavOpen(false);
+  };
+
+  // Send Message with Neural Transmission Lifecycle
+  const handleSendMessage = async (content: string, clientMsgId?: string) => {
+    const cliId = clientMsgId || `cli-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    if (activeChannel) {
+      const optMsg: ChatMessage = {
+        id: `opt-${Date.now()}`,
+        workspace_id: activeWorkspace!.id,
+        channel_id: activeChannel.id,
+        sender_id: currentUser?.id,
+        sender_username: currentUser?.username,
+        sender_display_name: currentUser?.display_name || currentUser?.username,
+        message_type: 'USER_TEXT',
+        content,
+        reply_count: 0,
+        is_edited: false,
+        is_pinned: false,
+        client_msg_id: cliId,
+        seq: 0,
+        created_at: new Date().toISOString(),
+        status: 'pending',
+      };
+      setMessages((prev) => [...prev, optMsg]);
+
+      try {
+        const serverMsg = await messageLifecycle.sendMessage({
+          content,
+          channelId: activeChannel.id,
+          clientMsgId: cliId,
+        });
+        setMessages((prev) =>
+          prev.map((m) => (m.client_msg_id === cliId ? { ...serverMsg, client_msg_id: cliId } : m))
+        );
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) => (m.client_msg_id === cliId ? { ...m, status: 'failed' } : m))
+        );
+      }
+    } else if (activeDm) {
+      const optMsg: ChatMessage = {
+        id: `opt-${Date.now()}`,
+        workspace_id: activeWorkspace!.id,
+        conversation_id: activeDm.id,
+        sender_id: currentUser?.id,
+        sender_username: currentUser?.username,
+        sender_display_name: currentUser?.display_name || currentUser?.username,
+        message_type: 'USER_TEXT',
+        content,
+        reply_count: 0,
+        is_edited: false,
+        is_pinned: false,
+        client_msg_id: cliId,
+        seq: 0,
+        created_at: new Date().toISOString(),
+        status: 'pending',
+      };
+      setMessages((prev) => [...prev, optMsg]);
+
+      try {
+        const serverMsg = await messageLifecycle.sendMessage({
+          content,
+          conversationId: activeDm.id,
+          clientMsgId: cliId,
+        });
+        setMessages((prev) =>
+          prev.map((m) => (m.client_msg_id === cliId ? { ...serverMsg, client_msg_id: cliId } : m))
+        );
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) => (m.client_msg_id === cliId ? { ...m, status: 'failed' } : m))
+        );
+      }
+    }
+  };
+
+  // Retry sending a failed message
+  const handleRetryMessage = async (clientMsgId: string) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.client_msg_id === clientMsgId ? { ...m, status: 'pending' } : m))
+    );
+    try {
+      const serverMsg = await messageLifecycle.retryMessage(clientMsgId);
+      if (serverMsg) {
+        setMessages((prev) =>
+          prev.map((m) => (m.client_msg_id === clientMsgId ? { ...serverMsg, client_msg_id: clientMsgId } : m))
+        );
+      }
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) => (m.client_msg_id === clientMsgId ? { ...m, status: 'failed' } : m))
+      );
+    }
+  };
+
+  // Open DM with a specific user
+  const handleOpenDmWithUser = async (targetUserId: string) => {
+    if (!activeWorkspace) return;
+    try {
+      const dm = await api.openDm(activeWorkspace.id, targetUserId);
+      const dmList = await api.listDms(activeWorkspace.id);
+      setDms(dmList);
+      setActiveDm(dm);
+      setActiveChannel(null);
+      setActiveViewTab('chat');
+      fetchMessages(undefined, dm.id);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Switch Dev User
+  const handleSwitchDevUser = async (username: string) => {
+    try {
+      const res = await api.devSwitchUser(username);
+      setCurrentUser(res.user);
+      const wsList = await api.listWorkspaces();
+      setWorkspaces(wsList);
+      if (wsList.length > 0) {
+        const target = wsList.find((w) => w.id === activeWorkspace?.id) || wsList[0];
+        setActiveWorkspace(target);
+        await refreshWorkspaceData(target.id);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Logout Handler
+  const handleLogout = async () => {
+    await api.v2Logout();
+    setCurrentUser(null);
+    setIsProfileOpen(false);
+  };
+
+  // Update Task Status
+  const handleUpdateTaskStatus = async (taskId: string, newStatus: string) => {
+    try {
+      const updated = await api.updateTask(taskId, { status: newStatus });
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleOpenTaskDetailById = async (taskId: string) => {
+    try {
+      const detail = await api.getTaskDetails(taskId);
+      setSelectedTaskForDetail(detail);
+      setIsTaskDetailOpen(true);
+    } catch {
+      const found = tasks.find((t) => t.id === taskId);
+      if (found) {
+        setSelectedTaskForDetail(found);
+        setIsTaskDetailOpen(true);
+      }
+    }
+  };
+
+  const handleUpdateTaskStatusAction = async (taskId: string, newStatus: string, action?: string) => {
+    try {
+      const updated = await api.updateTask(taskId, { status: newStatus, action });
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      setSelectedTaskForDetail(updated);
+      if (activeWorkspace) {
+        const wr = await api.listWorkspaceResources(activeWorkspace.id).catch(() => []);
+        setWorkspaceResources(wr);
+      }
+    } catch (e) {
+      console.error('Failed to update task:', e);
+      throw e;
+    }
+  };
+
+  const handleAssignUser = async (taskId: string, userId: string) => {
+    try {
+      const updated = await api.updateTask(taskId, { assignee_id: userId });
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      setSelectedTaskForDetail(updated);
+    } catch (e) {
+      console.error('Failed to assign user:', e);
+      throw e;
+    }
+  };
+
+  const handleAcquireResource = async (taskId: string, resourceId: string, mode: 'EXCLUSIVE' | 'SHARED') => {
+    await api.acquireTaskResource(taskId, resourceId, mode, 1);
+    const updated = await api.getTaskDetails(taskId);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+    setSelectedTaskForDetail(updated);
+    if (activeWorkspace) {
+      const wr = await api.listWorkspaceResources(activeWorkspace.id).catch(() => []);
+      setWorkspaceResources(wr);
+    }
+  };
+
+  const handleReleaseResource = async (taskId: string, resourceId: string) => {
+    await api.releaseTaskResource(taskId, resourceId);
+    const updated = await api.getTaskDetails(taskId);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+    setSelectedTaskForDetail(updated);
+    if (activeWorkspace) {
+      const wr = await api.listWorkspaceResources(activeWorkspace.id).catch(() => []);
+      setWorkspaceResources(wr);
+    }
+  };
+
+  const handleNavigateToConversation = (channelId?: string | null) => {
+    if (channelId) {
+      const targetChannel = channels.find((c) => c.id === channelId);
+      if (targetChannel) {
+        handleSelectChannel(channelId);
+      }
+    }
+    setActiveViewTab('chat');
+  };
+
+  const handleInvitationJoined = async (wsId: string) => {
+    setInviteCodeFromUrl(null);
+    window.history.replaceState({}, '', window.location.pathname);
+    const wsList = await api.listWorkspaces();
+    setWorkspaces(wsList);
+    const target = wsList.find((w) => w.id === wsId) || wsList[0];
+    if (target) {
+      setActiveWorkspace(target);
+      await refreshWorkspaceData(target.id);
+    }
+  };
+
+  const wsStatusMapped: ConnectionStatus =
+    chatWs.status === 'connecting' ? 'reconnecting' : chatWs.status;
+
+  // Unauthenticated View
+  if (!bootstrapping && !currentUser) {
+    return (
+      <AuthScreen
+        onAuthenticated={async (user) => {
+          setCurrentUser(user);
+          const wsList = await api.listWorkspaces();
+          setWorkspaces(wsList);
+          if (wsList.length > 0) {
+            setActiveWorkspace(wsList[0]);
+            await refreshWorkspaceData(wsList[0].id);
+          }
+        }}
+        onDevSwitch={handleSwitchDevUser}
+      />
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Top Navigation */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <Cpu className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-base font-semibold tracking-tight text-white">VGARSS</h1>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800">
-                {health ? `${health.environment} (v${health.version})` : 'v0.1.0-dev'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">Virtual Group Resource Synchronization & Scheduling</p>
-          </div>
+    <div className="h-screen w-screen overflow-hidden bg-[#F5F6F8] text-[#202631] flex flex-col font-sans selection:bg-[#4055A8] selection:text-white">
+      {/* Mobile Top Header */}
+      <div className="md:hidden h-12 bg-white border-b border-[#E4E7EC] px-4 flex items-center justify-between z-30">
+        <button
+          onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+          className="p-1 rounded text-[#667085] hover:text-[#202631] transition"
+          aria-label="Toggle Mobile Navigation"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <span className="font-bold text-xs text-[#202631] truncate">
+          {activeWorkspace?.name || 'VGARSS 2.0'}
+        </span>
+        <button
+          onClick={() => setIsProfileOpen(true)}
+          className="w-7 h-7 rounded-full bg-[#EEF2FF] text-[#4055A8] font-bold text-xs flex items-center justify-center border border-[#C7D2FE]"
+        >
+          {currentUser?.username?.[0]?.toUpperCase() || 'U'}
+        </button>
+      </div>
+
+      {/* Main Desktop Three-Column Layout */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Column 1: Server / Workspace Icon Rail (64px) */}
+        <div className={`md:flex ${isMobileNavOpen ? 'flex absolute inset-y-0 left-0 z-40' : 'hidden md:flex'}`}>
+          <ServerSidebar
+            workspaces={workspaces}
+            activeWorkspaceId={activeWorkspace?.id || null}
+            onSelectWorkspace={handleSelectWorkspace}
+            onOpenCreateWorkspace={() => setIsCreateWsOpen(true)}
+            currentUser={currentUser}
+            onOpenProfile={() => setIsProfileOpen(true)}
+            onSwitchDevUser={handleSwitchDevUser}
+          />
+
+          {/* Column 2: Channel & Conversation Sidebar (240px) */}
+          <ChannelSidebar
+            activeWorkspace={activeWorkspace}
+            channels={channels}
+            activeChannelId={activeChannel?.id || null}
+            onSelectChannel={handleSelectChannel}
+            onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
+            dms={dms}
+            activeDmId={activeDm?.id || null}
+            onSelectDm={handleSelectDm}
+            activeViewTab={activeViewTab}
+            onSelectViewTab={(tab) => {
+              setActiveViewTab(tab);
+              setIsMobileNavOpen(false);
+            }}
+            onOpenSearch={() => setIsSearchOpen(true)}
+            onOpenInviteMember={() => setIsInviteOpen(true)}
+            onOpenWorkspaceSettings={() => setIsSettingsOpen(true)}
+            wsStatus={chatWs.status}
+            apiLatency={apiLatency}
+          />
         </div>
 
-        {/* Live Service Indicators */}
-        <div className="flex items-center space-x-4 text-xs font-mono">
-          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800">
-            <Server className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-400">REST API:</span>
-            <span
-              className={`flex items-center space-x-1 ${
-                apiStatus === 'connected' ? 'text-emerald-400' : 'text-amber-400'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  apiStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-                }`}
+        {/* Backdrop for Mobile Slide-over */}
+        {isMobileNavOpen && (
+          <div
+            onClick={() => setIsMobileNavOpen(false)}
+            className="md:hidden fixed inset-0 bg-black/40 z-30 backdrop-blur-xs"
+          />
+        )}
+
+        {/* Column 3: Main Central Stage (Conversation or Dedicated Systems Consoles) */}
+        <main className="flex-1 flex overflow-hidden bg-[#F5F6F8]">
+          {bootstrapping ? (
+            <div className="flex-1 flex items-center justify-center p-8">
+              <LoadingState message="Connecting to VGARSS 2.0 Real-Time Collaboration Hub..." />
+            </div>
+          ) : bootstrapError ? (
+            <div className="flex-1 flex items-center justify-center p-8">
+              <ErrorState message={bootstrapError} onRetry={bootstrap} />
+            </div>
+          ) : activeViewTab === 'chat' ? (
+            <div className="flex-1 flex overflow-hidden">
+              <MainConversationPanel
+                activeChannel={activeChannel}
+                activeDm={activeDm}
+                messages={messages}
+                hasMoreMessages={hasMoreMessages}
+                onLoadOlderMessages={handleLoadOlder}
+                onSendMessage={handleSendMessage}
+                onOpenCreateTaskModal={(initTitle, msgId) => {
+                  setTaskModalInitial({ title: initTitle, messageId: msgId });
+                  setIsTaskModalOpen(true);
+                }}
+                onNavigateToScheduler={() => setActiveViewTab('scheduler')}
+                onToggleRightDrawer={() => setIsRightDrawerOpen(!isRightDrawerOpen)}
+                isRightDrawerOpen={isRightDrawerOpen}
+                activeTypers={chatWs.activeTypers}
+                onSendTyping={() => activeTargetId && chatWs.sendTyping(activeTargetId, !!activeChannel)}
+                tasks={tasks}
+                onSelectTaskId={handleOpenTaskDetailById}
+                currentUserId={currentUser?.id}
+                getMessageState={messageLifecycle.getMessageState}
+                onRetryMessage={handleRetryMessage}
+                theme="light"
               />
-              <span>{apiStatus === 'connected' ? `ONLINE (${apiLatency}ms)` : 'CHECKING'}</span>
-            </span>
-          </div>
 
-          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800">
-            <Network className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-400">WebSocket:</span>
-            <span
-              className={`flex items-center space-x-1 ${
-                wsStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  wsStatus === 'connected' ? 'bg-emerald-400' : 'bg-slate-500'
-                }`}
+              {/* Context Drawer (260px) */}
+              <RightDrawer
+                isOpen={isRightDrawerOpen}
+                onClose={() => setIsRightDrawerOpen(false)}
+                members={members}
+                tasks={tasks}
+                onOpenDmWithUser={handleOpenDmWithUser}
+                onOpenCreateTask={() => setIsTaskModalOpen(true)}
+                onUpdateTaskStatus={handleUpdateTaskStatus}
+                onNavigateToScheduler={() => setActiveViewTab('scheduler')}
+                onSelectTask={(task) => {
+                  setSelectedTaskForDetail(task);
+                  setIsTaskDetailOpen(true);
+                }}
               />
-              <span className="uppercase">{wsStatus}</span>
-            </span>
-          </div>
+            </div>
+          ) : activeViewTab === 'scheduler' ? (
+            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+              <ProcessSchedulerView
+                simulation={sim.simulation}
+                currentTick={sim.currentTick}
+                ganttHistory={sim.ganttHistory}
+                processes={sim.processes}
+                readyQueue={sim.readyQueue}
+                waitingQueue={sim.waitingQueue}
+                runningProcessId={sim.runningProcessId}
+                isPlaying={sim.isPlaying}
+                onStep={sim.step}
+                onPlay={sim.play}
+                onPause={sim.pause}
+                onReset={sim.reset}
+                onCreateSimulation={sim.create}
+              />
+            </div>
+          ) : activeViewTab === 'resources' ? (
+            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+              <ResourceMonitorView
+                groupId={activeWorkspace?.id || null}
+                simId={sim.simulation?.id || null}
+                resources={resources}
+                processes={sim.processes}
+                onRefreshResources={async () => {
+                  if (activeWorkspace && sim.simulation) {
+                    const r = await api.getResourceStatuses(activeWorkspace.id, sim.simulation.id);
+                    setResources(r);
+                  }
+                  if (activeWorkspace) {
+                    const wr = await api.listWorkspaceResources(activeWorkspace.id).catch(() => []);
+                    setWorkspaceResources(wr);
+                  }
+                }}
+              />
+            </div>
+          ) : activeViewTab === 'deadlock' ? (
+            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+              <DeadlockLabView
+                groupId={activeWorkspace?.id || null}
+                simId={sim.simulation?.id || null}
+                resources={resources}
+                onRefreshResources={async () => {
+                  if (activeWorkspace && sim.simulation) {
+                    const r = await api.getResourceStatuses(activeWorkspace.id, sim.simulation.id);
+                    setResources(r);
+                  }
+                  if (activeWorkspace) {
+                    const wr = await api.listWorkspaceResources(activeWorkspace.id).catch(() => []);
+                    setWorkspaceResources(wr);
+                  }
+                }}
+                onCreateSimulation={sim.create}
+              />
+            </div>
+          ) : activeViewTab === 'network' ? (
+            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+              <NetworkMonitorView
+                wsStatus={wsStatusMapped}
+                wsLatency={chatWs.latency}
+                wsEvents={[]}
+                lastSeq={0}
+                onSendWsPing={() => {}}
+                onResyncWs={() => {}}
+              />
+            </div>
+          ) : activeViewTab === 'analytics' ? (
+            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+              <PerformanceAnalyticsView
+                currentMetrics={sim.metrics}
+                currentAlgorithm={sim.simulation?.algorithm || 'ROUND_ROBIN'}
+              />
+            </div>
+          ) : null}
+        </main>
+      </div>
 
-          <button
-            onClick={checkHealth}
-            className="p-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
-            title="Refresh Health Diagnostics"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </header>
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden h-12 bg-white border-t border-[#E4E7EC] flex items-center justify-around z-20">
+        <button
+          onClick={() => setActiveViewTab('chat')}
+          className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
+            activeViewTab === 'chat' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4 mb-0.5" />
+          <span>Chat</span>
+        </button>
 
-      {/* Main Container */}
-      <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
-        {/* Environment Readiness Banner */}
-        <div className="rounded-xl border border-emerald-900/40 bg-gradient-to-r from-emerald-950/30 via-slate-900/60 to-cyan-950/30 p-5 backdrop-blur shadow-sm">
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center space-x-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                <h2 className="text-base font-semibold text-emerald-300">
-                  Antigravity Development Environment Initialized
-                </h2>
-              </div>
-              <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                All development prerequisites (Node 22 LTS, Python 3.12, Git 2.50, Vite, Tailwind CSS, FastAPI, and Antigravity Skills) are configured and operational.
-              </p>
-            </div>
-            <div className="text-right">
-              <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-700">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>PHASES 1–7 READY</span>
-              </span>
-            </div>
-          </div>
-        </div>
+        <button
+          onClick={() => setActiveViewTab('scheduler')}
+          className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
+            activeViewTab === 'scheduler' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+          }`}
+        >
+          <Cpu className="w-4 h-4 mb-0.5" />
+          <span>Scheduler</span>
+        </button>
 
-        {/* Diagnostic Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Node & Network Ports */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
-            <div className="flex items-center space-x-2 text-cyan-400 text-sm font-semibold">
-              <Network className="w-4 h-4" />
-              <h3>Network Communication Stack</h3>
-            </div>
-            <div className="space-y-2 text-xs font-mono">
-              <div className="flex justify-between items-center py-1.5 px-2.5 rounded bg-slate-950/60 border border-slate-800/80">
-                <span className="text-slate-400">REST API Server</span>
-                <span className="text-cyan-400 font-semibold">Port 8000 (HTTP)</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 px-2.5 rounded bg-slate-950/60 border border-slate-800/80">
-                <span className="text-slate-400">WebSocket Telemetry</span>
-                <span className="text-cyan-400 font-semibold">Port 8000 (/ws)</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 px-2.5 rounded bg-slate-950/60 border border-slate-800/80">
-                <span className="text-slate-400">Raw TCP Socket Server</span>
-                <span className="text-indigo-400 font-semibold">Port 9000 (Framed)</span>
-              </div>
-            </div>
-          </div>
+        <button
+          onClick={() => setActiveViewTab('resources')}
+          className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
+            activeViewTab === 'resources' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+          }`}
+        >
+          <Layers className="w-4 h-4 mb-0.5" />
+          <span>Resources</span>
+        </button>
 
-          {/* OS Scheduling Engines */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
-            <div className="flex items-center space-x-2 text-amber-400 text-sm font-semibold">
-              <Layers className="w-4 h-4" />
-              <h3>OS Scheduling Core</h3>
-            </div>
-            <div className="space-y-1.5 text-xs">
-              <div className="grid grid-cols-2 gap-2">
-                {['ROUND_ROBIN', 'FCFS', 'SJF_NON_PREEMPTIVE', 'SRTF_PREEMPTIVE', 'PRIORITY'].map((algo) => (
-                  <button
-                    key={algo}
-                    onClick={() => setSelectedAlgo(algo)}
-                    className={`py-1.5 px-2 rounded border text-left font-mono transition-colors cursor-pointer text-[11px] ${
-                      selectedAlgo === algo
-                        ? 'border-amber-500 bg-amber-950/40 text-amber-300 font-semibold'
-                        : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    {algo}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+        <button
+          onClick={() => setActiveViewTab('network')}
+          className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
+            activeViewTab === 'network' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+          }`}
+        >
+          <Activity className="w-4 h-4 mb-0.5" />
+          <span>Network</span>
+        </button>
 
-          {/* Concurrency & Sync */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
-            <div className="flex items-center space-x-2 text-rose-400 text-sm font-semibold">
-              <Lock className="w-4 h-4" />
-              <h3>Synchronization & Deadlock</h3>
-            </div>
-            <div className="space-y-2 text-xs font-mono">
-              <div className="flex justify-between items-center py-1.5 px-2.5 rounded bg-slate-950/60 border border-slate-800/80">
-                <span className="text-slate-400">Mutex Primitives</span>
-                <span className="text-emerald-400">Supported (Binary)</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 px-2.5 rounded bg-slate-950/60 border border-slate-800/80">
-                <span className="text-slate-400">Counting Semaphores</span>
-                <span className="text-emerald-400">Supported (K tokens)</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 px-2.5 rounded bg-slate-950/60 border border-slate-800/80">
-                <span className="text-slate-400">Deadlock Detection</span>
-                <span className="text-rose-400">Cycle Detection (RAG)</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <button
+          onClick={() => setActiveViewTab('analytics')}
+          className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
+            activeViewTab === 'analytics' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+          }`}
+        >
+          <BarChart2 className="w-4 h-4 mb-0.5" />
+          <span>Analytics</span>
+        </button>
+      </nav>
 
-        {/* Simulation Sandbox Preview */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-white font-medium text-sm">
-              <Activity className="w-4 h-4 text-cyan-400" />
-              <span>Simulation Kernel Control Toolbar</span>
-            </div>
-            <div className="flex items-center space-x-2 text-xs font-mono">
-              <span className="text-slate-400">Current Strategy:</span>
-              <span className="text-cyan-400 font-semibold">{selectedAlgo}</span>
-            </div>
-          </div>
+      {/* Modals */}
+      <CreateWorkspaceModal
+        isOpen={isCreateWsOpen}
+        onClose={() => setIsCreateWsOpen(false)}
+        onCreateWorkspace={async (p) => {
+          const ws = await api.createWorkspace(p);
+          setWorkspaces((prev) => [ws, ...prev]);
+          setActiveWorkspace(ws);
+          refreshWorkspaceData(ws.id);
+        }}
+      />
 
-          {/* Action buttons */}
-          <div className="flex items-center space-x-3 pt-1">
-            <button
-              onClick={() => alert('Simulation Kernel initialized. Full execution engine ready for Phase 8.')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium transition cursor-pointer shadow-sm shadow-cyan-600/30"
-            >
-              <PlayCircle className="w-4 h-4" />
-              <span>Start Simulation</span>
-            </button>
-            <button
-              onClick={() => alert('Step action triggered.')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
-            >
-              <PauseCircle className="w-4 h-4" />
-              <span>Step Tick (1 unit)</span>
-            </button>
-            <button
-              onClick={() => alert('State reset triggered.')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Reset Queues</span>
-            </button>
-          </div>
+      <CreateChannelModal
+        isOpen={isCreateChannelOpen}
+        onClose={() => setIsCreateChannelOpen(false)}
+        onCreateChannel={async (p) => {
+          if (!activeWorkspace) return;
+          const ch = await api.createChannel(activeWorkspace.id, p);
+          setChannels((prev) => [...prev, ch]);
+          setActiveChannel(ch);
+          fetchMessages(ch.id);
+        }}
+      />
 
-          {/* Process Queue State Preview */}
-          <div className="grid grid-cols-5 gap-3 pt-2 text-xs">
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-sky-400 font-mono text-[11px] font-semibold">1. NEW</span>
-              <p className="text-slate-400 text-[11px]">Admitted processes awaiting scheduling pool.</p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-amber-400 font-mono text-[11px] font-semibold">2. READY</span>
-              <p className="text-slate-400 text-[11px]">In Ready Queue awaiting CPU dispatch.</p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-emerald-400 font-mono text-[11px] font-semibold">3. RUNNING</span>
-              <p className="text-slate-400 text-[11px]">Currently executing on simulated CPU.</p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-rose-400 font-mono text-[11px] font-semibold">4. WAITING</span>
-              <p className="text-slate-400 text-[11px]">Blocked on Mutex or Semaphore.</p>
-            </div>
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-slate-400 font-mono text-[11px] font-semibold">5. TERMINATED</span>
-              <p className="text-slate-400 text-[11px]">Completed execution with metrics logged.</p>
-            </div>
-          </div>
-        </div>
+      <InviteMemberModal
+        isOpen={isInviteOpen}
+        onClose={() => setIsInviteOpen(false)}
+        workspaceId={activeWorkspace?.id}
+        onAddMember={async (username, role) => {
+          if (!activeWorkspace) return;
+          const mem = await api.addWorkspaceMember(activeWorkspace.id, username, role);
+          setMembers((prev) => [...prev, mem]);
+        }}
+      />
 
-        {/* Telemetry Console */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-          <div className="flex items-center space-x-2 text-xs font-mono text-slate-400">
-            <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Telemetry & Event Log</span>
-          </div>
-          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800/80 font-mono text-xs text-slate-400 space-y-1 min-h-[90px]">
-            {wsLogs.length === 0 ? (
-              <div className="text-slate-500 italic">Awaiting network telemetry events...</div>
-            ) : (
-              wsLogs.map((log, idx) => (
-                <div key={idx} className="text-emerald-400/90">
-                  {log}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </main>
+      <JoinWorkspaceModal
+        inviteCode={inviteCodeFromUrl}
+        onClose={() => setInviteCodeFromUrl(null)}
+        onJoined={handleInvitationJoined}
+      />
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-3 px-6 text-center text-xs text-slate-500">
-        VGARSS &copy; 2026 &mdash; Computer Networks &amp; Operating Systems Systems Engineering Platform
-      </footer>
+      <TaskCreationModal
+        isOpen={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+        workspaceId={activeWorkspace?.id || ''}
+        channels={channels}
+        members={members}
+        resources={workspaceResources}
+        initialTitle={taskModalInitial.title}
+        initialMessageId={taskModalInitial.messageId}
+        initialChannelId={activeChannel?.id}
+        onCreateTask={async (payload) => {
+          const t = await api.createTask(payload);
+          setTasks((prev) => [t, ...prev]);
+        }}
+      />
+
+      <TaskDetailModal
+        isOpen={isTaskDetailOpen}
+        onClose={() => setIsTaskDetailOpen(false)}
+        task={selectedTaskForDetail}
+        members={members}
+        availableResources={workspaceResources}
+        onUpdateStatus={handleUpdateTaskStatusAction}
+        onAssignUser={handleAssignUser}
+        onAcquireResource={handleAcquireResource}
+        onReleaseResource={handleReleaseResource}
+        onNavigateToConversation={handleNavigateToConversation}
+        onNavigateToScheduler={() => setActiveViewTab('scheduler')}
+        onNavigateToDeadlock={() => setActiveViewTab('deadlock')}
+      />
+
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        workspaceId={activeWorkspace?.id || ''}
+        onSelectResult={(res) => {
+          if (res.channel_id) {
+            handleSelectChannel(res.channel_id);
+          }
+        }}
+      />
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        currentUser={currentUser}
+        onUpdatePresence={async (pState, statusMsg) => {
+          await api.updatePresence(pState, statusMsg);
+          setCurrentUser((prev) =>
+            prev ? { ...prev, presence_state: pState as any, status_message: statusMsg || prev.status_message } : prev
+          );
+        }}
+        onSwitchUser={handleSwitchDevUser}
+        onLogout={handleLogout}
+      />
+
+      <WorkspaceSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        workspace={activeWorkspace}
+        members={members}
+        channels={channels}
+      />
     </div>
   );
 }
