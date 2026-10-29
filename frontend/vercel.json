@@ -4,6 +4,14 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/vgarss/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/vgarss/(.*\\.(?:js|css|png|jpg|jpeg|svg|ico|json|webmanifest|woff|woff2))",
+      "destination": "/$1"
+    },
+    {
       "source": "/vgarss/(.*)",
       "destination": "/index.html"
     },
@@ -13,6 +21,24 @@
     }
   ],
   "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/vgarss/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
@@ -36,4 +62,3 @@
     }
   ]
 }
-
