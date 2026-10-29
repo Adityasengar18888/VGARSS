@@ -55,7 +55,7 @@ export function ServerSidebar({
             .toUpperCase();
 
           return (
-            <div key={ws.id} className="relative group w-full flex justify-center">
+            <div key={ws.id} className="relative group w-full flex flex-col items-center">
               {/* Active Indicator Bar */}
               <div
                 className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 bg-[#4055A8] rounded-r transition-all duration-200 ${
@@ -64,7 +64,7 @@ export function ServerSidebar({
               />
               <button
                 onClick={() => onSelectWorkspace(ws.id)}
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center font-bold text-xs tracking-wider active:scale-[0.97] transition-all duration-150 ${
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex flex-col items-center justify-center font-bold active:scale-[0.97] transition-all duration-150 ${
                   isActive
                     ? 'rounded-xl bg-[#4055A8] text-white shadow-xs'
                     : 'rounded-xl bg-white text-[#344054] hover:bg-[#F8FAFC] hover:text-[#202631] border border-[#E4E7EC]'
@@ -72,8 +72,11 @@ export function ServerSidebar({
                 title={ws.name}
                 aria-label={`Select workspace ${ws.name}`}
               >
-                {initials}
+                <span className="text-xs tracking-wider">{initials}</span>
               </button>
+              <span className={`text-[9px] text-center truncate max-w-[56px] mt-0.5 leading-tight ${isActive ? 'text-[#4055A8] font-bold' : 'text-[#667085]'}`}>
+                {ws.name.replace("'s Workspace", "").slice(0, 8)}
+              </span>
 
               {/* Workspace Name Flyout Tooltip */}
               <div className="absolute left-14 top-1/2 -translate-y-1/2 z-50 pointer-events-none hidden group-hover:flex items-center pl-2">

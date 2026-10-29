@@ -49,13 +49,14 @@ def list_direct_conversations(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Lists all active direct message conversations for the user in this workspace."""
+    """Lists all active direct message conversations for the user in this workspace or shared workspaces."""
     check_workspace_membership(db, workspace_id, current_user["id"])
 
-    # Query all DM conversations where current_user is a participant
+    # Query all DM conversations where current_user is a participant in this workspace
+    # OR across any shared workspace the user belongs to
     cursor = db.execute(
         """
-        SELECT c.id AS conversation_id, c.is_group, p_self.unread_count,
+        SELECT c.id AS conversation_id, c.workspace_id, c.is_group, p_self.unread_count,
                u_peer.id AS peer_id, u_peer.username AS peer_username, u_peer.display_name AS peer_display_name,
                u_peer.avatar_url AS peer_avatar, u_peer.presence_state AS peer_presence,
                u_peer.status_message AS peer_status, u_peer.email AS peer_email
@@ -64,15 +65,24 @@ def list_direct_conversations(
         JOIN direct_conversation_participants p_peer ON c.id = p_peer.conversation_id AND p_peer.user_id != ?
         JOIN users u_peer ON p_peer.user_id = u_peer.id
         WHERE c.workspace_id = ?
+           OR c.workspace_id IN (SELECT wm.workspace_id FROM workspace_members wm WHERE wm.user_id = ?)
+        ORDER BY c.created_at DESC
         """,
-        (current_user["id"], current_user["id"], workspace_id),
+        (current_user["id"], current_user["id"], workspace_id, current_user["id"]),
     )
     rows = cursor.fetchall()
     results = []
-    online_ids = set(chat_hub.get_online_users(workspace_id))
+    seen_peers = set()
+    all_online = set(chat_hub.get_online_users())
 
     for r in rows:
-        is_online = r["peer_id"] in online_ids or r["peer_presence"] == "ONLINE"
+        peer_id = r["peer_id"]
+        if not r["is_group"]:
+            if peer_id in seen_peers:
+                continue
+            seen_peers.add(peer_id)
+
+        is_online = peer_id in all_online or r["peer_presence"] == "ONLINE"
         recipient = UserProfileResponse(
             id=r["peer_id"],
             username=r["peer_username"],
@@ -85,7 +95,7 @@ def list_direct_conversations(
         results.append(
             DirectConversationResponse(
                 id=r["conversation_id"],
-                workspace_id=workspace_id,
+                workspace_id=r["workspace_id"],
                 is_group=bool(r["is_group"]),
                 recipient=recipient,
                 unread_count=r["unread_count"] or 0,
@@ -103,28 +113,55 @@ def open_or_create_dm(
 ):
     """Opens an existing 1:1 DM conversation with the target recipient or creates a new one."""
     check_workspace_membership(db, workspace_id, current_user["id"])
-    check_workspace_membership(db, workspace_id, payload.recipient_id)
+
+    # Determine the target workspace for this DM:
+    # If the recipient is in this workspace, use it. Otherwise, look for a shared workspace between them.
+    recipient_in_ws = db.execute(
+        "SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+        (workspace_id, payload.recipient_id),
+    ).fetchone()
+
+    target_ws_id = workspace_id
+    if not recipient_in_ws:
+        shared_ws = db.execute(
+            """
+            SELECT m1.workspace_id
+            FROM workspace_members m1
+            JOIN workspace_members m2 ON m1.workspace_id = m2.workspace_id
+            WHERE m1.user_id = ? AND m2.user_id = ?
+            LIMIT 1
+            """,
+            (current_user["id"], payload.recipient_id),
+        ).fetchone()
+        if not shared_ws:
+            raise HTTPException(
+                status_code=403,
+                detail="Forbidden: The recipient does not share any workspace with you.",
+            )
+        target_ws_id = shared_ws["workspace_id"]
 
     # Check for existing 1:1 conversation between the two users
     cursor = db.execute(
         """
-        SELECT c.id
+        SELECT c.id, c.workspace_id
         FROM direct_conversations c
         JOIN direct_conversation_participants p1 ON c.id = p1.conversation_id AND p1.user_id = ?
         JOIN direct_conversation_participants p2 ON c.id = p2.conversation_id AND p2.user_id = ?
-        WHERE c.workspace_id = ? AND c.is_group = 0
+        WHERE (c.workspace_id = ? OR c.workspace_id = ?) AND c.is_group = 0
+        LIMIT 1
         """,
-        (current_user["id"], payload.recipient_id, workspace_id),
+        (current_user["id"], payload.recipient_id, workspace_id, target_ws_id),
     )
     existing = cursor.fetchone()
     convo_id = existing["id"] if existing else None
+    actual_ws_id = existing["workspace_id"] if existing else target_ws_id
 
     if not convo_id:
         convo_id = str(uuid.uuid4())
         with db:
             db.execute(
                 "INSERT INTO direct_conversations (id, workspace_id, is_group) VALUES (?, ?, 0)",
-                (convo_id, workspace_id),
+                (convo_id, target_ws_id),
             )
             db.execute(
                 "INSERT INTO direct_conversation_participants (conversation_id, user_id) VALUES (?, ?)",
@@ -143,7 +180,8 @@ def open_or_create_dm(
     if not u_row:
         raise HTTPException(status_code=404, detail="Recipient not found.")
 
-    is_online = payload.recipient_id in chat_hub.get_online_users(workspace_id) or u_row["presence_state"] == "ONLINE"
+    all_online = set(chat_hub.get_online_users())
+    is_online = payload.recipient_id in all_online or u_row["presence_state"] == "ONLINE"
     recipient = UserProfileResponse(
         id=u_row["id"],
         username=u_row["username"],
@@ -156,7 +194,7 @@ def open_or_create_dm(
 
     return DirectConversationResponse(
         id=convo_id,
-        workspace_id=workspace_id,
+        workspace_id=actual_ws_id,
         is_group=False,
         recipient=recipient,
         unread_count=0,

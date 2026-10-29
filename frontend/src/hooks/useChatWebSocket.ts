@@ -37,22 +37,37 @@ export function useChatWebSocket({
   const lastSeqRef = useRef<Record<string, number>>({});
   const lastPingTimestamp = useRef<number>(0);
   const reconnectAttempts = useRef<number>(0);
+
+  // Store active target & callback handlers in refs so they NEVER cause re-connections
   const activeTargetIdRef = useRef<string | null | undefined>(activeTargetId);
   activeTargetIdRef.current = activeTargetId;
 
-  const getWsUrl = useCallback(() => {
-    const baseWs = getWebSocketBaseUrl();
-    const url = `${baseWs}/ws/v2`;
-    const params = new URLSearchParams();
-    if (token) params.set('token', token);
-    if (workspaceId) params.set('workspace_id', workspaceId);
-    return `${url}?${params.toString()}`;
-  }, [token, workspaceId]);
+  const onMessageReceivedRef = useRef(onMessageReceived);
+  onMessageReceivedRef.current = onMessageReceived;
+
+  const onPresenceUpdateRef = useRef(onPresenceUpdate);
+  onPresenceUpdateRef.current = onPresenceUpdate;
+
+  const onTypingEventRef = useRef(onTypingEvent);
+  onTypingEventRef.current = onTypingEvent;
+
+  const onTaskEventRef = useRef(onTaskEvent);
+  onTaskEventRef.current = onTaskEvent;
+
+  const onReceiptEventRef = useRef(onReceiptEvent);
+  onReceiptEventRef.current = onReceiptEvent;
+
+  const onWorkspaceAddedRef = useRef(onWorkspaceAdded);
+  onWorkspaceAddedRef.current = onWorkspaceAdded;
 
   const sendEvent = useCallback((eventObj: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(eventObj));
-      return true;
+      try {
+        wsRef.current.send(JSON.stringify(eventObj));
+        return true;
+      } catch (err) {
+        console.warn('[VGARSS WS] Send failed:', err);
+      }
     }
     return false;
   }, []);
@@ -73,7 +88,7 @@ export function useChatWebSocket({
     });
   }, [sendEvent]);
 
-  // Connect loop
+  // Connect loop - ONLY triggers when token or workspaceId changes
   useEffect(() => {
     if (!token || !workspaceId) {
       setStatus('disconnected');
@@ -86,7 +101,12 @@ export function useChatWebSocket({
       if (isUnmounted) return;
       setStatus('connecting');
 
-      const url = getWsUrl();
+      const baseWs = getWebSocketBaseUrl();
+      const params = new URLSearchParams();
+      params.set('token', token);
+      params.set('workspace_id', workspaceId);
+      const url = `${baseWs}/ws/v2?${params.toString()}`;
+
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -127,8 +147,8 @@ export function useChatWebSocket({
           } else if (eventType === 'AUTH_SUCCESS') {
             setStatus('connected');
           } else if (eventType === 'PRESENCE_UPDATE') {
-            if (onPresenceUpdate && data.user_id && data.presence_state) {
-              onPresenceUpdate(data.user_id, data.presence_state);
+            if (onPresenceUpdateRef.current && data.user_id && data.presence_state) {
+              onPresenceUpdateRef.current(data.user_id, data.presence_state);
             }
           } else if (eventType === 'TYPING_EVENT') {
             const typerId = data.user_id;
@@ -148,24 +168,24 @@ export function useChatWebSocket({
                 });
               }, 3000);
             }
-            if (onTypingEvent) onTypingEvent(data);
+            if (onTypingEventRef.current) onTypingEventRef.current(data);
           } else if (eventType === 'CHAT_MESSAGE_RECV') {
             const msg: ChatMessage = data.payload;
             const target = data.channel_id || data.conversation_id;
             if (target && data.seq) {
               lastSeqRef.current[target] = Math.max(lastSeqRef.current[target] || 0, data.seq);
             }
-            if (onMessageReceived) onMessageReceived(msg);
+            if (onMessageReceivedRef.current) onMessageReceivedRef.current(msg);
           } else if (eventType === 'TASK_CREATED' || eventType === 'TASK_STATE_CHANGED') {
-            if (onTaskEvent) onTaskEvent(data.payload);
+            if (onTaskEventRef.current) onTaskEventRef.current(data.payload);
           } else if (
             eventType === 'MESSAGE_DELIVERED_UPDATE' ||
             eventType === 'MESSAGE_READ_UPDATE' ||
             eventType === 'MESSAGE_DELIVERY_UPDATE'
           ) {
-            if (onReceiptEvent) onReceiptEvent(data);
+            if (onReceiptEventRef.current) onReceiptEventRef.current(data);
           } else if (eventType === 'WORKSPACE_ADDED') {
-            if (onWorkspaceAdded) onWorkspaceAdded(data);
+            if (onWorkspaceAddedRef.current) onWorkspaceAddedRef.current(data);
           }
         } catch {
           // ignore parsing error
@@ -173,22 +193,25 @@ export function useChatWebSocket({
       };
 
       ws.onclose = (ev: CloseEvent) => {
-        setStatus('disconnected');
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        if (isUnmounted) return;
+
+        setStatus('disconnected');
         // Do not reconnect on auth failure (1008 Policy Violation or auth error)
         if (ev.code === 1008 || (ev.reason && ev.reason.toLowerCase().includes('auth'))) {
           console.warn('[VGARSS WS] Authentication failed; halting reconnect attempts.');
           return;
         }
-        if (!isUnmounted) {
-          const backoff = Math.min(1000 * Math.pow(1.5, reconnectAttempts.current), 15000);
-          reconnectAttempts.current += 1;
-          reconnectTimeoutRef.current = setTimeout(connect, backoff);
-        }
+
+        const backoff = Math.min(1000 * Math.pow(1.5, reconnectAttempts.current), 15000);
+        reconnectAttempts.current += 1;
+        reconnectTimeoutRef.current = setTimeout(connect, backoff);
       };
 
       ws.onerror = () => {
-        ws.close();
+        if (!isUnmounted) {
+          ws.close();
+        }
       };
     };
 
@@ -199,9 +222,12 @@ export function useChatWebSocket({
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       Object.values(typingTimersRef.current).forEach((t) => clearTimeout(t));
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [token, workspaceId, getWsUrl, sendEvent, requestCatchup, onMessageReceived, onPresenceUpdate, onTypingEvent, onTaskEvent]);
+  }, [token, workspaceId, sendEvent, requestCatchup]);
 
   return {
     status,
@@ -212,4 +238,3 @@ export function useChatWebSocket({
     requestCatchup,
   };
 }
-

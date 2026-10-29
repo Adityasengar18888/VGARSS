@@ -162,10 +162,18 @@ export default function App() {
       // 4. Recipient auto-acknowledges receipt (delivered/read)
       messageLifecycle.acknowledgeIncomingMessage(newMsg, activeViewTab === 'chat');
     },
-    onWorkspaceAdded: async () => {
+    onWorkspaceAdded: async (data: { workspace_id: string; workspace_name: string; role?: string }) => {
       try {
         const wsList = await api.listWorkspaces();
         setWorkspaces(wsList);
+        if (data?.workspace_id) {
+          const target = wsList.find((w) => w.id === data.workspace_id);
+          if (target && members.length <= 1) {
+            setActiveWorkspace(target);
+            localStorage.setItem('vgarss_active_workspace_id', target.id);
+            await refreshWorkspaceData(target.id);
+          }
+        }
       } catch {
         // ignore
       }
@@ -343,9 +351,20 @@ export default function App() {
       setWorkspaces(wsList);
 
       if (wsList.length > 0) {
-        const primary = wsList[0];
-        setActiveWorkspace(primary);
-        await refreshWorkspaceData(primary.id);
+        const savedWsId = localStorage.getItem('vgarss_active_workspace_id');
+        let selectedWs = wsList.find((w) => w.id === savedWsId);
+
+        // If no saved selection, look for a workspace the user joined (not owner) or a collaborative workspace
+        if (!selectedWs) {
+          const joinedWs = wsList.find(
+            (w) => w.role !== 'OWNER' || w.name.includes("adi's") || !w.name.includes(`${user.username}'s`)
+          );
+          selectedWs = joinedWs || wsList[0];
+        }
+
+        setActiveWorkspace(selectedWs);
+        localStorage.setItem('vgarss_active_workspace_id', selectedWs.id);
+        await refreshWorkspaceData(selectedWs.id);
       } else {
         // Create initial production workspace if empty
         const defaultWs = await api.createWorkspace({
@@ -354,6 +373,7 @@ export default function App() {
         });
         setWorkspaces([defaultWs]);
         setActiveWorkspace(defaultWs);
+        localStorage.setItem('vgarss_active_workspace_id', defaultWs.id);
         await refreshWorkspaceData(defaultWs.id);
       }
     } catch (err: any) {
@@ -372,6 +392,7 @@ export default function App() {
     const ws = workspaces.find((w) => w.id === wsId);
     if (!ws) return;
     setActiveWorkspace(ws);
+    localStorage.setItem('vgarss_active_workspace_id', ws.id);
     await refreshWorkspaceData(ws.id);
     setIsMobileNavOpen(false);
   };
@@ -388,11 +409,19 @@ export default function App() {
   };
 
   // Select DM
-  const handleSelectDm = (dmId: string) => {
+  const handleSelectDm = async (dmId: string) => {
     const dm = dms.find((d) => d.id === dmId);
     if (!dm) return;
     setActiveDm(dm);
     setActiveChannel(null);
+    if (dm.workspace_id && dm.workspace_id !== activeWorkspace?.id) {
+      const targetWs = workspaces.find((w) => w.id === dm.workspace_id);
+      if (targetWs) {
+        setActiveWorkspace(targetWs);
+        localStorage.setItem('vgarss_active_workspace_id', targetWs.id);
+        await refreshWorkspaceData(targetWs.id);
+      }
+    }
     fetchMessages(undefined, dm.id);
     api.markDmRead(dm.id).catch(() => {});
     setIsMobileNavOpen(false);
@@ -757,46 +786,72 @@ export default function App() {
               <ErrorState message={bootstrapError} onRetry={bootstrap} />
             </div>
           ) : activeViewTab === 'chat' ? (
-            <div className="flex-1 flex overflow-hidden">
-              <MainConversationPanel
-                activeChannel={activeChannel}
-                activeDm={activeDm}
-                messages={messages}
-                hasMoreMessages={hasMoreMessages}
-                onLoadOlderMessages={handleLoadOlder}
-                onSendMessage={handleSendMessage}
-                onOpenCreateTaskModal={(initTitle, msgId) => {
-                  setTaskModalInitial({ title: initTitle, messageId: msgId });
-                  setIsTaskModalOpen(true);
-                }}
-                onNavigateToScheduler={() => setActiveViewTab('scheduler')}
-                onToggleRightDrawer={() => setIsRightDrawerOpen(!isRightDrawerOpen)}
-                isRightDrawerOpen={isRightDrawerOpen}
-                activeTypers={chatWs.activeTypers}
-                onSendTyping={() => activeTargetId && chatWs.sendTyping(activeTargetId, !!activeChannel)}
-                tasks={tasks}
-                onSelectTaskId={handleOpenTaskDetailById}
-                currentUserId={currentUser?.id}
-                getMessageState={messageLifecycle.getMessageState}
-                onRetryMessage={handleRetryMessage}
-                theme="light"
-              />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Team Collaboration notification banner if user is currently isolated in a private workspace */}
+              {workspaces.length > 1 && members.length <= 1 && (
+                <div className="bg-[#EEF2FF] border-b border-[#C7D2FE] px-4 py-2 flex items-center justify-between text-xs text-[#3538CD] z-10 flex-shrink-0">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-semibold">Team Workspace Available:</span>
+                    <span>
+                      You are viewing your private workspace. Active team members are in{' '}
+                      <strong>
+                        {workspaces.find((w) => w.id !== activeWorkspace?.id)?.name || 'shared workspace'}
+                      </strong>.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const other = workspaces.find((w) => w.id !== activeWorkspace?.id);
+                      if (other) handleSelectWorkspace(other.id);
+                    }}
+                    className="ml-3 px-2.5 py-1 bg-[#4055A8] hover:bg-[#334488] text-white rounded text-[11px] font-semibold active:scale-95 transition shadow-2xs flex-shrink-0"
+                  >
+                    Switch Workspace &rarr;
+                  </button>
+                </div>
+              )}
 
-              {/* Context Drawer (260px) */}
-              <RightDrawer
-                isOpen={isRightDrawerOpen}
-                onClose={() => setIsRightDrawerOpen(false)}
-                members={members}
-                tasks={tasks}
-                onOpenDmWithUser={handleOpenDmWithUser}
-                onOpenCreateTask={() => setIsTaskModalOpen(true)}
-                onUpdateTaskStatus={handleUpdateTaskStatus}
-                onNavigateToScheduler={() => setActiveViewTab('scheduler')}
-                onSelectTask={(task) => {
-                  setSelectedTaskForDetail(task);
-                  setIsTaskDetailOpen(true);
-                }}
-              />
+              <div className="flex-1 flex overflow-hidden">
+                <MainConversationPanel
+                  activeChannel={activeChannel}
+                  activeDm={activeDm}
+                  messages={messages}
+                  hasMoreMessages={hasMoreMessages}
+                  onLoadOlderMessages={handleLoadOlder}
+                  onSendMessage={handleSendMessage}
+                  onOpenCreateTaskModal={(initTitle, msgId) => {
+                    setTaskModalInitial({ title: initTitle, messageId: msgId });
+                    setIsTaskModalOpen(true);
+                  }}
+                  onNavigateToScheduler={() => setActiveViewTab('scheduler')}
+                  onToggleRightDrawer={() => setIsRightDrawerOpen(!isRightDrawerOpen)}
+                  isRightDrawerOpen={isRightDrawerOpen}
+                  activeTypers={chatWs.activeTypers}
+                  onSendTyping={() => activeTargetId && chatWs.sendTyping(activeTargetId, !!activeChannel)}
+                  tasks={tasks}
+                  onSelectTaskId={handleOpenTaskDetailById}
+                  currentUserId={currentUser?.id}
+                  getMessageState={messageLifecycle.getMessageState}
+                  onRetryMessage={handleRetryMessage}
+                  theme="light"
+                />
+
+                {/* Context Drawer (260px) */}
+                <RightDrawer
+                  isOpen={isRightDrawerOpen}
+                  onClose={() => setIsRightDrawerOpen(false)}
+                  members={members}
+                  tasks={tasks}
+                  onOpenDmWithUser={handleOpenDmWithUser}
+                  onOpenCreateTask={() => setIsTaskModalOpen(true)}
+                  onUpdateTaskStatus={handleUpdateTaskStatus}
+                  onNavigateToScheduler={() => setActiveViewTab('scheduler')}
+                  onSelectTask={(task) => {
+                    setSelectedTaskForDetail(task);
+                    setIsTaskDetailOpen(true);
+                  }}
+                />
+              </div>
             </div>
           ) : activeViewTab === 'scheduler' ? (
             <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
