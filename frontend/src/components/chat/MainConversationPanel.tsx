@@ -49,7 +49,7 @@ export function MainConversationPanel({
   currentUserId,
   getMessageState,
   onRetryMessage,
-  theme = 'light',
+  theme = 'dark',
 }: MainConversationPanelProps) {
   const [inputContent, setInputContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,10 +67,20 @@ export function MainConversationPanel({
     return 'sent';
   };
 
-  const title = activeChannel ? `#${activeChannel.name}` : activeDm ? `@${activeDm.recipient.display_name || activeDm.recipient.username}` : 'Select a conversation';
-  const subtitle = activeChannel ? activeChannel.topic : activeDm ? (activeDm.recipient.presence_state === 'ONLINE' ? 'Active now' : 'Offline') : '';
+  const title = activeChannel
+    ? `#${activeChannel.name}`
+    : activeDm
+    ? `@${activeDm.recipient.display_name || activeDm.recipient.username}`
+    : 'Select a conversation';
 
-  // Auto-scroll to bottom when new messages arrive
+  const subtitle = activeChannel
+    ? activeChannel.topic
+    : activeDm
+    ? activeDm.recipient.presence_state === 'ONLINE'
+      ? 'Active now'
+      : 'Offline'
+    : '';
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
@@ -102,18 +112,18 @@ export function MainConversationPanel({
   const typingNames = Object.values(activeTypers);
 
   return (
-    <div className="flex-1 flex flex-col bg-white overflow-hidden relative" aria-label="Conversation Panel">
+    <div className="flex-1 flex flex-col bg-[#080808] text-[#F2F2F2] overflow-hidden relative font-sans" aria-label="Conversation Panel">
       {/* Top Header Bar */}
-      <header className="h-12 border-b border-[#E4E7EC] px-4 flex items-center justify-between bg-white select-none flex-shrink-0 z-10 shadow-2xs">
+      <header className="h-12 border-b border-[#222222] px-4 flex items-center justify-between bg-[#0C0C0C] select-none flex-shrink-0 z-10">
         <div className="flex items-center space-x-2.5 truncate">
-          <div className="flex items-center space-x-1.5 font-bold text-[#202631] text-xs truncate">
-            {activeChannel && <Hash className="w-4 h-4 text-[#98A2B3]" />}
+          <div className="flex items-center space-x-1.5 font-bold text-[#F2F2F2] text-xs truncate font-mono">
+            {activeChannel && <Hash className="w-4 h-4 text-[#707070]" />}
             <span className="truncate">{title}</span>
           </div>
           {subtitle && (
             <>
-              <span className="text-[#D0D5DD]">|</span>
-              <span className="text-xs text-[#667085] truncate max-w-md">{subtitle}</span>
+              <span className="text-[#333333]">|</span>
+              <span className="text-xs text-[#707070] truncate max-w-md">{subtitle}</span>
             </>
           )}
         </div>
@@ -123,7 +133,7 @@ export function MainConversationPanel({
           {activeChannel?.channel_type === 'SIMULATION' && onNavigateToScheduler && (
             <button
               onClick={onNavigateToScheduler}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-[#EEF2FF] hover:bg-[#E0E7FF] border border-[#C7D2FE] text-[#4055A8] text-xs font-semibold transition active:scale-[0.97]"
+              className="flex items-center space-x-1 px-2.5 py-1 rounded-[3px] bg-[#171717] hover:bg-[#222222] border border-[#292929] text-[#E8E8E8] text-xs font-mono transition active:scale-[0.97]"
               title="Open Live CPU Scheduler & Gantt Chart"
             >
               <Cpu className="w-3.5 h-3.5" />
@@ -134,10 +144,10 @@ export function MainConversationPanel({
 
           <button
             onClick={onToggleRightDrawer}
-            className={`p-1.5 rounded-lg transition active:scale-[0.97] ${
+            className={`p-1.5 rounded-[3px] transition active:scale-[0.97] ${
               isRightDrawerOpen
-                ? 'bg-[#EEF2FF] text-[#4055A8] border border-[#C7D2FE]'
-                : 'text-[#667085] hover:text-[#202631] hover:bg-[#F2F4F7]'
+                ? 'bg-[#1C1C1C] text-[#F2F2F2] border border-[#333333]'
+                : 'text-[#707070] hover:text-[#F2F2F2] hover:bg-[#141414]'
             }`}
             title="Toggle Members & Tasks Drawer"
             aria-label="Toggle Context Drawer"
@@ -159,7 +169,7 @@ export function MainConversationPanel({
           <div className="flex justify-center py-1">
             <button
               onClick={onLoadOlderMessages}
-              className="text-xs font-mono text-[#4055A8] hover:text-[#334488] bg-[#F8FAFC] border border-[#D0D5DD] px-3 py-1 rounded-full hover:border-[#98A2B3] transition active:scale-[0.97]"
+              className="text-xs font-mono text-[#A1A1A1] hover:text-white bg-[#141414] border border-[#242424] px-3 py-1 rounded-[3px] hover:border-[#383838] transition active:scale-[0.97]"
             >
               Load previous messages
             </button>
@@ -167,13 +177,13 @@ export function MainConversationPanel({
         )}
 
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-8 select-none text-[#667085]">
-            <div className="w-12 h-12 rounded-2xl bg-[#F8FAFC] border border-[#E4E7EC] flex items-center justify-center mb-3 text-[#4055A8]">
+          <div className="h-full flex flex-col items-center justify-center text-center p-8 select-none text-[#707070]">
+            <div className="w-12 h-12 rounded-xl bg-[#111111] border border-[#242424] flex items-center justify-center mb-3 text-[#E8E8E8]">
               <Hash className="w-6 h-6" />
             </div>
-            <h3 className="text-sm font-bold text-[#202631]">Welcome to {title}!</h3>
-            <p className="text-xs text-[#667085] max-w-sm mt-1">
-              This is the start of the conversation. You can send messages, collaborate with team members, or turn messages into OS simulation tasks.
+            <h3 className="text-sm font-bold text-[#F2F2F2]">Welcome to {title}!</h3>
+            <p className="text-xs text-[#707070] max-w-sm mt-1">
+              This is the start of the conversation. Send real-time messages or convert communications into OS simulation tasks.
             </p>
           </div>
         ) : (
@@ -186,14 +196,14 @@ export function MainConversationPanel({
               return (
                 <div
                   key={msg.id}
-                  className="flex items-center space-x-2 py-1.5 px-3 rounded-lg bg-[#FEF6EE] border-l-2 border-[#B7791F] text-xs font-mono text-[#202631]"
+                  className="flex items-center space-x-2 py-1.5 px-3 rounded bg-[#111111] border-l-2 border-[#E8E8E8] text-xs font-mono text-[#A1A1A1]"
                 >
-                  <span className="text-[#98A2B3] text-[10px]">{timeStr}</span>
-                  <span className="flex-1 text-[11px]">{msg.content}</span>
+                  <span className="text-[#555555] text-[10px]">{timeStr}</span>
+                  <span className="flex-1 text-[11px] text-[#F2F2F2]">{msg.content}</span>
                   {taskMatch && onSelectTaskId && (
                     <button
                       onClick={() => onSelectTaskId(taskMatch[1])}
-                      className="px-2 py-0.5 rounded bg-white border border-[#D0D5DD] text-[10px] text-[#B7791F] font-bold hover:bg-[#F8FAFC] active:scale-[0.97] transition flex-shrink-0 shadow-2xs"
+                      className="px-2 py-0.5 rounded bg-[#171717] border border-[#292929] text-[10px] text-[#E8E8E8] font-bold hover:bg-[#222222] active:scale-[0.97] transition flex-shrink-0"
                     >
                       Task Detail &rarr;
                     </button>
@@ -214,20 +224,20 @@ export function MainConversationPanel({
             return (
               <div
                 key={msg.id}
-                className="group relative flex items-start space-x-3 hover:bg-[#F8FAFC] -mx-2 px-2 py-1.5 rounded-lg transition"
+                className="group relative flex items-start space-x-3 hover:bg-[#111111]/70 -mx-2 px-2 py-1.5 rounded transition"
               >
                 {/* Sender Avatar */}
-                <div className="w-8 h-8 rounded-full bg-[#EEF2FF] border border-[#C7D2FE] flex items-center justify-center text-xs font-bold text-[#4055A8] flex-shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded-[3px] bg-[#171717] border border-[#292929] flex items-center justify-center text-xs font-bold font-mono text-[#F2F2F2] flex-shrink-0 mt-0.5">
                   {msg.sender_username ? msg.sender_username[0].toUpperCase() : 'U'}
                 </div>
 
                 {/* Message Body */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2 flex-wrap">
-                    <span className="font-bold text-xs text-[#202631] truncate">
+                    <span className="font-bold text-xs text-[#F2F2F2] truncate">
                       {msg.sender_display_name || msg.sender_username || 'Anonymous'}
                     </span>
-                    <span className="text-[10px] font-mono text-[#98A2B3]">{timeStr}</span>
+                    <span className="text-[10px] font-mono text-[#555555]">{timeStr}</span>
                     {isOutgoing && (
                       <MessageTransmissionAnimation
                         messageId={msg.id || msg.client_msg_id || 'opt'}
@@ -243,19 +253,19 @@ export function MainConversationPanel({
                     )}
                   </div>
 
-                  <div className="text-xs text-[#344054] mt-0.5 leading-relaxed break-words whitespace-pre-wrap max-w-[65ch]">
+                  <div className="text-xs text-[#D8D8D8] mt-0.5 leading-relaxed break-words whitespace-pre-wrap max-w-[65ch]">
                     {msg.content}
                   </div>
                 </div>
 
                 {/* Floating Quick Action Bar */}
-                <div className="opacity-0 group-hover:opacity-100 transition absolute right-2 -top-2 bg-white border border-[#E4E7EC] rounded-lg shadow-sm flex items-center p-0.5 space-x-0.5 z-10">
+                <div className="opacity-0 group-hover:opacity-100 transition absolute right-2 -top-2 bg-[#171717] border border-[#292929] rounded-[3px] shadow-sm flex items-center p-0.5 space-x-0.5 z-10 font-mono text-[10px]">
                   <button
                     onClick={() => onOpenCreateTaskModal(msg.content, msg.id)}
-                    className="p-1 hover:bg-[#FEF6EE] text-[#475467] hover:text-[#B7791F] rounded text-[11px] flex items-center space-x-1 active:scale-[0.97] transition"
+                    className="px-2 py-0.5 hover:bg-[#222222] text-[#A1A1A1] hover:text-[#F2F2F2] rounded flex items-center space-x-1 active:scale-[0.97] transition"
                     title="Convert Message into OS Task"
                   >
-                    <PlusCircle className="w-3 h-3 text-[#B7791F]" />
+                    <PlusCircle className="w-3 h-3 text-[#E8E8E8]" />
                     <span>Create Task</span>
                   </button>
                 </div>
@@ -268,37 +278,40 @@ export function MainConversationPanel({
 
       {/* Typing Indicator Bar */}
       {typingNames.length > 0 && (
-        <div className="px-4 py-1 text-[11px] text-[#667085] font-mono font-medium">
+        <div className="px-4 py-1 text-[11px] text-[#707070] font-mono">
           {typingNames.join(', ')} {typingNames.length === 1 ? 'is' : 'are'} typing...
         </div>
       )}
 
       {/* Message Composer Dock */}
-      <div className="p-3 border-t border-[#E4E7EC] bg-[#F8FAFC]">
-        <form onSubmit={handleSubmit} className="relative rounded-xl bg-white border border-[#D0D5DD] focus-within:border-[#4055A8] focus-within:ring-1 focus-within:ring-[#4055A8] transition shadow-2xs">
+      <div className="p-3 border-t border-[#1E1E1E] bg-[#0A0A0A]">
+        <form
+          onSubmit={handleSubmit}
+          className="relative rounded-[3px] bg-[#111111] border border-[#242424] focus-within:border-[#E8E8E8] transition shadow-xs"
+        >
           <textarea
             value={inputContent}
             onChange={(e) => setInputContent(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={`Message ${title}... (Enter to send, Shift+Enter for newline)`}
             rows={2}
-            className="w-full bg-transparent px-3 py-2 text-xs text-[#202631] placeholder-[#98A2B3] resize-none outline-none font-sans"
+            className="w-full bg-transparent px-3.5 py-2.5 text-xs text-[#F2F2F2] placeholder-[#555555] resize-none outline-none font-sans"
             disabled={!activeChannel && !activeDm}
           />
 
           {/* Composer Footer Actions */}
-          <div className="flex items-center justify-between px-2.5 py-1.5 border-t border-[#F2F4F7] bg-[#FAFAFC] rounded-b-xl">
-            <div className="flex items-center space-x-1.5">
+          <div className="flex items-center justify-between px-2.5 py-1.5 border-t border-[#1C1C1C] bg-[#0E0E0E] rounded-b-[3px]">
+            <div className="flex items-center space-x-2">
               <button
                 type="button"
                 onClick={() => onOpenCreateTaskModal(inputContent)}
-                className="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-white hover:bg-[#FEF6EE] text-[#B7791F] text-[11px] font-semibold border border-[#D0D5DD] active:scale-[0.97] transition shadow-2xs"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-[2px] bg-[#171717] hover:bg-[#222222] text-[#E8E8E8] text-[10px] font-mono font-semibold border border-[#292929] active:scale-[0.97] transition"
                 title="Create an OS Process Task"
               >
-                <PlusCircle className="w-3 h-3 text-[#B7791F]" />
+                <PlusCircle className="w-3 h-3 text-[#E8E8E8]" />
                 <span>Create Task</span>
               </button>
-              <span className="text-[10px] text-[#98A2B3] font-mono hidden sm:inline">
+              <span className="text-[10px] text-[#555555] font-mono hidden sm:inline">
                 Supports bold, code snippets, and task dispatch
               </span>
             </div>
@@ -306,10 +319,10 @@ export function MainConversationPanel({
             <button
               type="submit"
               disabled={!inputContent.trim() || isSubmitting}
-              className={`p-2 min-w-[36px] min-h-[36px] rounded-lg active:scale-[0.97] transition ${
+              className={`p-2 min-w-[34px] min-h-[34px] rounded-[3px] active:scale-[0.97] transition flex items-center justify-center ${
                 inputContent.trim() && !isSubmitting
-                  ? 'bg-[#4055A8] text-white hover:bg-[#334488]'
-                  : 'bg-[#F2F4F7] text-[#98A2B3] cursor-not-allowed'
+                  ? 'bg-[#E8E8E8] text-[#080808] hover:bg-white'
+                  : 'bg-[#1C1C1C] text-[#555555] cursor-not-allowed'
               }`}
               title="Send Message (Enter)"
               aria-label="Send Message"

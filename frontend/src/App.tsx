@@ -17,6 +17,7 @@ import { WorkspaceSettingsModal } from './components/chat/WorkspaceSettingsModal
 import { TaskDetailModal } from './components/chat/TaskDetailModal';
 import { JoinWorkspaceModal } from './components/chat/JoinWorkspaceModal';
 import { AuthScreen } from './components/chat/AuthScreen';
+import { LandingView } from './views/LandingView';
 
 import { ProcessSchedulerView } from './views/ProcessSchedulerView';
 import { ResourceMonitorView } from './views/ResourceMonitorView';
@@ -51,6 +52,19 @@ export default function App() {
   const [activeViewTab, setActiveViewTab] = useState<SystemViewTab>(getInitialTab);
   const [isRightDrawerOpen, setIsRightDrawerOpen] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [publicView, setPublicView] = useState<'landing' | 'auth' | 'app'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      if (hash === '#auth' || hash === '#login' || hash === '#register') {
+        return 'auth';
+      }
+      if (new URLSearchParams(window.location.search).get('invite')) {
+        return 'auth';
+      }
+    }
+    return 'landing';
+  });
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   // Entities & Auth
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -206,6 +220,15 @@ export default function App() {
   useEffect(() => {
     sendWsEventRef.current = chatWs.sendEvent;
   }, [chatWs.sendEvent]);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
 
   // Health and Latency Check
   const checkHealth = useCallback(async () => {
@@ -675,13 +698,25 @@ export default function App() {
 
   // Unauthenticated View
   if (!bootstrapping && !currentUser) {
+    if (publicView === 'landing') {
+      return (
+        <LandingView
+          onEnterApp={() => setPublicView('auth')}
+          onOpenLogin={() => setPublicView('auth')}
+          onOpenRegister={() => setPublicView('auth')}
+          installPrompt={installPrompt}
+        />
+      );
+    }
     return (
       <AuthScreen
+        onBackToLanding={() => setPublicView('landing')}
         onAuthenticated={async (user) => {
           if (typeof window !== 'undefined') {
             localStorage.setItem('vgarss_auth_user', user.username);
           }
           setCurrentUser(user);
+          setPublicView('app');
           const wsList = await api.listWorkspaces();
           setWorkspaces(wsList);
           if (wsList.length > 0) {
@@ -701,29 +736,42 @@ export default function App() {
           if (typeof window !== 'undefined') {
             localStorage.setItem('vgarss_auth_user', uname);
           }
+          setPublicView('app');
           await handleSwitchDevUser(uname);
         }}
       />
     );
   }
 
+  // Allow authenticated users to view landing page on demand
+  if (publicView === 'landing') {
+    return (
+      <LandingView
+        onEnterApp={() => setPublicView('app')}
+        onOpenLogin={() => setPublicView('app')}
+        onOpenRegister={() => setPublicView('app')}
+        installPrompt={installPrompt}
+      />
+    );
+  }
+
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#F5F6F8] text-[#202631] flex flex-col font-sans selection:bg-[#4055A8] selection:text-white">
+    <div className="h-screen w-screen overflow-hidden bg-[#080808] text-[#F2F2F2] flex flex-col font-sans selection:bg-[#E8E8E8] selection:text-[#080808]">
       {/* Mobile Top Header */}
-      <div className="md:hidden h-12 bg-white border-b border-[#E4E7EC] px-4 flex items-center justify-between z-30">
+      <div className="md:hidden h-12 bg-[#0C0C0C] border-b border-[#222222] px-4 flex items-center justify-between z-30">
         <button
           onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
-          className="p-1 rounded text-[#667085] hover:text-[#202631] transition"
+          className="p-1 rounded text-[#707070] hover:text-[#F2F2F2] transition"
           aria-label="Toggle Mobile Navigation"
         >
           <Menu className="w-5 h-5" />
         </button>
-        <span className="font-bold text-xs text-[#202631] truncate">
+        <span className="font-bold text-xs text-[#F2F2F2] truncate font-mono">
           {activeWorkspace?.name || 'VGARSS 2.0'}
         </span>
         <button
           onClick={() => setIsProfileOpen(true)}
-          className="w-7 h-7 rounded-full bg-[#EEF2FF] text-[#4055A8] font-bold text-xs flex items-center justify-center border border-[#C7D2FE]"
+          className="w-7 h-7 rounded-[3px] bg-[#1E1E1E] text-[#F2F2F2] font-mono font-bold text-xs flex items-center justify-center border border-[#333333]"
         >
           {currentUser?.username?.[0]?.toUpperCase() || 'U'}
         </button>
@@ -742,6 +790,7 @@ export default function App() {
             onOpenProfile={() => setIsProfileOpen(true)}
             onSwitchDevUser={handleSwitchDevUser}
             onLogout={handleLogout}
+            onViewLanding={() => setPublicView('landing')}
           />
 
           {/* Column 2: Channel & Conversation Sidebar (240px) */}
@@ -776,7 +825,7 @@ export default function App() {
         )}
 
         {/* Column 3: Main Central Stage (Conversation or Dedicated Systems Consoles) */}
-        <main className="flex-1 flex overflow-hidden bg-[#F5F6F8]">
+        <main className="flex-1 flex overflow-hidden bg-[#080808]">
           {bootstrapping ? (
             <div className="flex-1 flex items-center justify-center p-8">
               <LoadingState message="Connecting to VGARSS 2.0 Real-Time Collaboration Hub..." />
@@ -789,12 +838,12 @@ export default function App() {
             <div className="flex-1 flex flex-col overflow-hidden">
               {/* Team Collaboration notification banner if user is currently isolated in a private workspace */}
               {workspaces.length > 1 && members.length <= 1 && (
-                <div className="bg-[#EEF2FF] border-b border-[#C7D2FE] px-4 py-2 flex items-center justify-between text-xs text-[#3538CD] z-10 flex-shrink-0">
+                <div className="bg-[#141414] border-b border-[#292929] px-4 py-2 flex items-center justify-between text-xs text-[#E8E8E8] z-10 flex-shrink-0 font-mono">
                   <div className="flex items-center space-x-2">
-                    <span className="font-semibold">Team Workspace Available:</span>
-                    <span>
-                      You are viewing your private workspace. Active team members are in{' '}
-                      <strong>
+                    <span className="font-semibold text-[#F2F2F2]">Team Workspace Available:</span>
+                    <span className="text-[#A1A1A1]">
+                      You are in a private workspace. Active team members are in{' '}
+                      <strong className="text-[#F2F2F2]">
                         {workspaces.find((w) => w.id !== activeWorkspace?.id)?.name || 'shared workspace'}
                       </strong>.
                     </span>
@@ -804,7 +853,7 @@ export default function App() {
                       const other = workspaces.find((w) => w.id !== activeWorkspace?.id);
                       if (other) handleSelectWorkspace(other.id);
                     }}
-                    className="ml-3 px-2.5 py-1 bg-[#4055A8] hover:bg-[#334488] text-white rounded text-[11px] font-semibold active:scale-95 transition shadow-2xs flex-shrink-0"
+                    className="ml-3 px-2.5 py-1 bg-[#E8E8E8] hover:bg-white text-[#080808] rounded-[3px] text-[11px] font-bold uppercase active:scale-95 transition shadow-xs flex-shrink-0"
                   >
                     Switch Workspace &rarr;
                   </button>
@@ -833,7 +882,7 @@ export default function App() {
                   currentUserId={currentUser?.id}
                   getMessageState={messageLifecycle.getMessageState}
                   onRetryMessage={handleRetryMessage}
-                  theme="light"
+                  theme="dark"
                 />
 
                 {/* Context Drawer (260px) */}
@@ -854,7 +903,7 @@ export default function App() {
               </div>
             </div>
           ) : activeViewTab === 'scheduler' ? (
-            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+            <div className="flex-1 overflow-y-auto p-6 bg-[#080808] text-[#F2F2F2]">
               <ProcessSchedulerView
                 simulation={sim.simulation}
                 currentTick={sim.currentTick}
@@ -872,7 +921,7 @@ export default function App() {
               />
             </div>
           ) : activeViewTab === 'resources' ? (
-            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+            <div className="flex-1 overflow-y-auto p-6 bg-[#080808] text-[#F2F2F2]">
               <ResourceMonitorView
                 groupId={activeWorkspace?.id || null}
                 simId={sim.simulation?.id || null}
@@ -891,7 +940,7 @@ export default function App() {
               />
             </div>
           ) : activeViewTab === 'deadlock' ? (
-            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+            <div className="flex-1 overflow-y-auto p-6 bg-[#080808] text-[#F2F2F2]">
               <DeadlockLabView
                 groupId={activeWorkspace?.id || null}
                 simId={sim.simulation?.id || null}
@@ -910,7 +959,7 @@ export default function App() {
               />
             </div>
           ) : activeViewTab === 'network' ? (
-            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+            <div className="flex-1 overflow-y-auto p-6 bg-[#080808] text-[#F2F2F2]">
               <NetworkMonitorView
                 wsStatus={wsStatusMapped}
                 wsLatency={chatWs.latency}
@@ -921,10 +970,10 @@ export default function App() {
               />
             </div>
           ) : activeViewTab === 'analytics' ? (
-            <div className="flex-1 overflow-y-auto p-6 bg-[#F5F6F8]">
+            <div className="flex-1 overflow-y-auto p-6 bg-[#080808] text-[#F2F2F2]">
               <PerformanceAnalyticsView
                 currentMetrics={sim.metrics}
-                currentAlgorithm={sim.simulation?.algorithm || 'ROUND_ROBIN'}
+                currentAlgorithm={(sim.simulation?.algorithm as any) || 'ROUND_ROBIN'}
               />
             </div>
           ) : null}
@@ -932,11 +981,11 @@ export default function App() {
       </div>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden h-12 bg-white border-t border-[#E4E7EC] flex items-center justify-around z-20">
+      <nav className="md:hidden h-12 bg-[#0C0C0C] border-t border-[#222222] flex items-center justify-around z-20 font-mono">
         <button
           onClick={() => setActiveViewTab('chat')}
           className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
-            activeViewTab === 'chat' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+            activeViewTab === 'chat' ? 'text-[#F2F2F2] font-bold' : 'text-[#707070]'
           }`}
         >
           <MessageSquare className="w-4 h-4 mb-0.5" />
@@ -946,7 +995,7 @@ export default function App() {
         <button
           onClick={() => setActiveViewTab('scheduler')}
           className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
-            activeViewTab === 'scheduler' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+            activeViewTab === 'scheduler' ? 'text-[#F2F2F2] font-bold' : 'text-[#707070]'
           }`}
         >
           <Cpu className="w-4 h-4 mb-0.5" />
@@ -956,7 +1005,7 @@ export default function App() {
         <button
           onClick={() => setActiveViewTab('resources')}
           className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
-            activeViewTab === 'resources' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+            activeViewTab === 'resources' ? 'text-[#F2F2F2] font-bold' : 'text-[#707070]'
           }`}
         >
           <Layers className="w-4 h-4 mb-0.5" />
@@ -966,7 +1015,7 @@ export default function App() {
         <button
           onClick={() => setActiveViewTab('network')}
           className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
-            activeViewTab === 'network' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+            activeViewTab === 'network' ? 'text-[#F2F2F2] font-bold' : 'text-[#707070]'
           }`}
         >
           <Activity className="w-4 h-4 mb-0.5" />
@@ -976,7 +1025,7 @@ export default function App() {
         <button
           onClick={() => setActiveViewTab('analytics')}
           className={`flex flex-col items-center justify-center p-1 text-[10px] transition ${
-            activeViewTab === 'analytics' ? 'text-[#4055A8] font-bold' : 'text-[#667085]'
+            activeViewTab === 'analytics' ? 'text-[#F2F2F2] font-bold' : 'text-[#707070]'
           }`}
         >
           <BarChart2 className="w-4 h-4 mb-0.5" />

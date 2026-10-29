@@ -13,74 +13,78 @@ export function WorkspaceSettingsModal({ isOpen, onClose, workspace, members, ch
   if (!isOpen || !workspace) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 select-none">
-      <div className="w-full max-w-lg bg-white border border-[#E4E7EC] rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="h-12 border-b border-[#E4E7EC] px-4 flex items-center justify-between bg-[#F8FAFC]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 select-none">
+      <div className="w-full max-w-lg bg-[#111111] border border-[#292929] rounded-[4px] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="h-12 border-b border-[#222222] px-4 flex items-center justify-between bg-[#141414]">
           <div className="flex items-center space-x-2">
-            <Settings className="w-4 h-4 text-[#4055A8]" />
-            <span className="font-semibold text-sm text-[#202631]">Workspace Settings — {workspace.name}</span>
+            <Settings className="w-4 h-4 text-[#A1A1A1]" />
+            <span className="font-mono font-bold text-xs uppercase tracking-wider text-[#F2F2F2]">
+              Workspace Settings &mdash; {workspace.name}
+            </span>
           </div>
-          <button onClick={onClose} className="p-1 rounded text-[#667085] hover:text-[#202631] transition">
+          <button onClick={onClose} className="p-1 rounded text-[#707070] hover:text-[#F2F2F2] transition">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4 text-xs">
+        <div className="p-5 space-y-4 text-xs font-mono">
           {/* Metadata */}
-          <div className="p-3.5 rounded-lg bg-[#F8FAFC] border border-[#E4E7EC] space-y-2.5">
+          <div className="p-3.5 rounded-[3px] bg-[#171717] border border-[#292929] space-y-2.5">
             <div className="flex justify-between items-center">
-              <span className="text-[#667085]">Workspace Slug</span>
-              <span className="font-mono text-[#4055A8] bg-white px-2 py-0.5 rounded border border-[#D0D5DD] font-medium">
+              <span className="text-[#A1A1A1]">Workspace Slug</span>
+              <span className="text-[#F2F2F2] bg-[#0E0E0E] px-2 py-0.5 rounded-[2px] border border-[#292929] font-medium">
                 {workspace.slug}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[#667085]">Your Role</span>
-              <span className="font-mono text-[#16805D] bg-white px-2 py-0.5 rounded border border-[#D0D5DD] font-semibold">
+              <span className="text-[#A1A1A1]">Your Role</span>
+              <span className="text-[#22C55E] bg-[#0E0E0E] px-2 py-0.5 rounded-[2px] border border-[#292929] font-semibold uppercase text-[10px]">
                 {workspace.role}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[#667085]">Total Channels</span>
-              <span className="text-[#202631] font-bold">{channels.length}</span>
+              <span className="text-[#A1A1A1]">Total Channels</span>
+              <span className="text-[#F2F2F2] font-bold">{channels.length}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[#667085]">Total Members</span>
-              <span className="text-[#202631] font-bold">{members.length}</span>
+              <span className="text-[#A1A1A1]">Total Members</span>
+              <span className="text-[#F2F2F2] font-bold">{members.length}</span>
             </div>
           </div>
 
           {/* Members List */}
           <div>
-            <div className="text-[11px] font-mono uppercase text-[#667085] font-semibold mb-2">Members & Permissions</div>
-            <div className="max-h-48 overflow-y-auto space-y-1 p-1 bg-[#F8FAFC] rounded-lg border border-[#E4E7EC]">
+            <div className="text-[10px] uppercase text-[#707070] font-semibold tracking-wider mb-2">
+              Members & Permissions
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1 p-1 bg-[#141414] rounded-[3px] border border-[#292929]">
               {members.map((m) => (
-                <div key={m.user_id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white transition shadow-2xs">
+                <div key={m.user_id} className="flex items-center justify-between p-2 rounded-[2px] hover:bg-[#1A1A1A] transition">
                   <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 rounded-full bg-[#EEF2FF] text-[#4055A8] flex items-center justify-center font-bold text-[10px]">
-                      {m.username[0].toUpperCase()}
+                    <span className="w-6 h-6 rounded-[2px] bg-[#222222] text-[#F2F2F2] flex items-center justify-center font-bold text-[10px] border border-[#333333]">
+                      {(m.display_name || m.username)[0].toUpperCase()}
                     </span>
                     <div>
-                      <span className="text-[#202631] font-semibold">{m.display_name || m.username}</span>
-                      <span className="text-[#98A2B3] text-[10px] ml-1.5 font-mono">@{m.username}</span>
+                      <span className="font-semibold text-[#F2F2F2] text-[11px] block">{m.display_name || m.username}</span>
+                      <span className="text-[#707070] text-[9px]">@{m.username}</span>
                     </div>
                   </div>
-                  <span className="font-mono text-[10px] text-[#475467] px-1.5 py-0.5 rounded bg-white border border-[#D0D5DD] font-medium">
+                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-[2px] bg-[#222222] text-[#A1A1A1] border border-[#2D2D2D]">
                     {m.role}
                   </span>
                 </div>
               ))}
             </div>
           </div>
+        </div>
 
-          <div className="pt-2 flex justify-end border-t border-[#F2F4F7]">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-[#F2F4F7] hover:bg-[#E4E7EC] text-[#202631] font-semibold transition active:scale-[0.97]"
-            >
-              Close
-            </button>
-          </div>
+        <div className="p-3 bg-[#141414] border-t border-[#222222] flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-[3px] bg-[#222222] hover:bg-[#2A2A2A] text-[#F2F2F2] font-mono text-xs border border-[#333333] transition"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>

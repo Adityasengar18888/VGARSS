@@ -1,4 +1,4 @@
-import { Plus, Cpu, LogOut } from 'lucide-react';
+import { Plus, Cpu, LogOut, Compass } from 'lucide-react';
 import { Workspace, UserProfile } from '../../types/chat';
 
 interface ServerSidebarProps {
@@ -11,6 +11,7 @@ interface ServerSidebarProps {
   onSwitchDevUser: (username: string) => void;
   totalUnreadCount?: number;
   onLogout?: () => void;
+  onViewLanding?: () => void;
 }
 
 export function ServerSidebar({
@@ -20,28 +21,28 @@ export function ServerSidebar({
   onOpenCreateWorkspace,
   currentUser,
   onOpenProfile,
-  onSwitchDevUser,
   onLogout,
+  onViewLanding,
 }: ServerSidebarProps) {
   return (
     <aside
-      className="w-16 bg-[#F0F2F5] border-r border-[#E4E7EC] flex flex-col items-center py-3 select-none flex-shrink-0 z-20"
+      className="w-16 bg-[#0A0A0A] border-r border-[#222222] flex flex-col items-center py-3 select-none flex-shrink-0 z-20 font-mono"
       aria-label="Workspaces Rail"
     >
       {/* VGARSS Core Brand Icon */}
       <div className="relative group mb-3">
         <button
           onClick={() => workspaces.length > 0 && onSelectWorkspace(workspaces[0].id)}
-          className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-[#4055A8] hover:bg-[#334488] flex items-center justify-center text-white font-bold text-lg active:scale-[0.97] transition-all duration-150 shadow-xs"
+          className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-[3px] bg-[#171717] hover:bg-[#222222] border border-[#292929] flex items-center justify-center text-[#F2F2F2] font-bold text-lg active:scale-[0.97] transition shadow-xs"
           title="VGARSS 2.0 Collaboration Platform"
           aria-label="VGARSS Home"
         >
-          <Cpu className="w-5 h-5 text-white" />
+          <Cpu className="w-5 h-5 text-[#F2F2F2]" />
         </button>
-        <span className="absolute -left-1 top-2.5 w-1 h-6 bg-[#4055A8] rounded-r-full" />
+        <span className="absolute -left-1 top-3 w-1 h-5 bg-[#E8E8E8] rounded-r" />
       </div>
 
-      <div className="w-8 h-px bg-[#E4E7EC] my-1" />
+      <div className="w-8 h-px bg-[#1C1C1C] my-1" />
 
       {/* Workspaces List */}
       <div className="flex-1 w-full overflow-y-auto space-y-2.5 flex flex-col items-center py-2 no-scrollbar">
@@ -58,29 +59,33 @@ export function ServerSidebar({
             <div key={ws.id} className="relative group w-full flex flex-col items-center">
               {/* Active Indicator Bar */}
               <div
-                className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 bg-[#4055A8] rounded-r transition-all duration-200 ${
+                className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 bg-[#E8E8E8] rounded-r transition-all duration-200 ${
                   isActive ? 'h-8' : 'h-0 group-hover:h-3'
                 }`}
               />
               <button
                 onClick={() => onSelectWorkspace(ws.id)}
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex flex-col items-center justify-center font-bold active:scale-[0.97] transition-all duration-150 ${
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex flex-col items-center justify-center font-bold active:scale-[0.97] transition-all rounded-[3px] ${
                   isActive
-                    ? 'rounded-xl bg-[#4055A8] text-white shadow-xs'
-                    : 'rounded-xl bg-white text-[#344054] hover:bg-[#F8FAFC] hover:text-[#202631] border border-[#E4E7EC]'
+                    ? 'bg-[#E8E8E8] text-[#080808] shadow-xs'
+                    : 'bg-[#141414] text-[#A1A1A1] hover:bg-[#1E1E1E] hover:text-[#F2F2F2] border border-[#242424]'
                 }`}
                 title={ws.name}
                 aria-label={`Select workspace ${ws.name}`}
               >
                 <span className="text-xs tracking-wider">{initials}</span>
               </button>
-              <span className={`text-[9px] text-center truncate max-w-[56px] mt-0.5 leading-tight ${isActive ? 'text-[#4055A8] font-bold' : 'text-[#667085]'}`}>
-                {ws.name.replace("'s Workspace", "").slice(0, 8)}
+              <span
+                className={`text-[9px] text-center truncate max-w-[56px] mt-0.5 leading-tight ${
+                  isActive ? 'text-[#F2F2F2] font-bold' : 'text-[#707070]'
+                }`}
+              >
+                {ws.name.replace("'s Workspace", '').slice(0, 8)}
               </span>
 
               {/* Workspace Name Flyout Tooltip */}
               <div className="absolute left-14 top-1/2 -translate-y-1/2 z-50 pointer-events-none hidden group-hover:flex items-center pl-2">
-                <div className="bg-[#1D2939] text-white text-[11px] font-medium py-1 px-2.5 rounded-md shadow-lg whitespace-nowrap">
+                <div className="bg-[#1C1C1C] text-[#F2F2F2] text-[11px] font-mono py-1 px-2.5 rounded border border-[#292929] shadow-lg whitespace-nowrap">
                   {ws.name}
                 </div>
               </div>
@@ -91,7 +96,7 @@ export function ServerSidebar({
         {/* Add Workspace Button */}
         <button
           onClick={onOpenCreateWorkspace}
-          className="w-11 h-11 rounded-xl bg-white border border-dashed border-[#CBD5E1] text-[#667085] hover:text-[#4055A8] hover:border-[#4055A8] hover:bg-[#F8FAFC] flex items-center justify-center transition-all duration-150 active:scale-[0.97]"
+          className="w-11 h-11 rounded-[3px] bg-[#111111] border border-dashed border-[#292929] text-[#707070] hover:text-[#F2F2F2] hover:border-[#E8E8E8] hover:bg-[#171717] flex items-center justify-center transition active:scale-[0.97]"
           title="Create New Workspace"
           aria-label="Create New Workspace"
         >
@@ -99,38 +104,25 @@ export function ServerSidebar({
         </button>
       </div>
 
-      <div className="w-8 h-px bg-[#E4E7EC] my-2" />
+      <div className="w-8 h-px bg-[#1C1C1C] my-2" />
 
-      {/* Dev User Fast Switcher */}
-      <div className="flex flex-col items-center space-y-1 mb-3">
-        <span className="text-[9px] font-mono font-semibold text-[#98A2B3] uppercase tracking-wider">Dev</span>
-        <div className="flex flex-col space-y-1">
-          {['alice', 'bob', 'charlie'].map((uname) => {
-            const isCurrent = currentUser?.username === uname;
-            return (
-              <button
-                key={uname}
-                onClick={() => onSwitchDevUser(uname)}
-                className={`w-7 h-7 rounded-full text-[10px] font-bold uppercase transition-all active:scale-[0.95] ${
-                  isCurrent
-                    ? 'bg-[#16805D] text-white ring-2 ring-[#16805D] ring-offset-2 ring-offset-[#F0F2F5]'
-                    : 'bg-white border border-[#D0D5DD] text-[#475467] hover:bg-[#F2F4F7] hover:text-[#202631]'
-                }`}
-                title={`Switch active user identity to ${uname}`}
-                aria-label={`Switch user to ${uname}`}
-              >
-                {uname[0]}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* View Public Specs & Landing */}
+      {onViewLanding && (
+        <button
+          onClick={onViewLanding}
+          className="mb-2 w-10 h-10 rounded-[3px] bg-[#141414] hover:bg-[#1E1E1E] border border-[#242424] flex items-center justify-center text-[#707070] hover:text-[#F2F2F2] transition active:scale-95"
+          title="System Architecture & Specifications"
+          aria-label="View Landing Page"
+        >
+          <Compass className="w-4 h-4" />
+        </button>
+      )}
 
       {/* User Profile Avatar with Presence Bead */}
       <div className="relative group">
         <button
           onClick={onOpenProfile}
-          className="relative w-10 h-10 rounded-full bg-white border border-[#D0D5DD] hover:border-[#4055A8] flex items-center justify-center text-sm font-semibold text-[#4055A8] transition shadow-xs active:scale-[0.97]"
+          className="relative w-10 h-10 rounded-full bg-[#171717] border border-[#292929] hover:border-[#E8E8E8] flex items-center justify-center text-xs font-mono font-semibold text-[#F2F2F2] transition active:scale-[0.97]"
           title={currentUser ? `${currentUser.display_name} (${currentUser.presence_state})` : 'Profile Settings'}
           aria-label="User Profile"
         >
@@ -142,14 +134,14 @@ export function ServerSidebar({
 
           {/* Presence Ring Bead */}
           <span
-            className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-[#0A0A0A] ${
               currentUser?.presence_state === 'ONLINE'
-                ? 'bg-[#16805D]'
+                ? 'bg-[#22C55E]'
                 : currentUser?.presence_state === 'AWAY'
-                ? 'bg-[#B7791F]'
+                ? 'bg-[#F59E0B]'
                 : currentUser?.presence_state === 'DND'
-                ? 'bg-[#C0393A]'
-                : 'bg-[#98A2B3]'
+                ? 'bg-[#EF4444]'
+                : 'bg-[#707070]'
             }`}
           />
         </button>
@@ -159,7 +151,7 @@ export function ServerSidebar({
       {onLogout && (
         <button
           onClick={onLogout}
-          className="mt-2 p-1.5 rounded-lg text-[#98A2B3] hover:text-[#C0393A] hover:bg-[#FEF3F2] transition active:scale-[0.95]"
+          className="mt-2 p-1.5 rounded text-[#707070] hover:text-[#EF4444] hover:bg-[#1A1111] transition active:scale-[0.95]"
           title="Sign Out / Switch Account"
           aria-label="Sign Out"
         >

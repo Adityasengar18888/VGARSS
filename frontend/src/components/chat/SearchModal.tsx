@@ -47,33 +47,33 @@ export function SearchModal({ isOpen, onClose, workspaceId, onSelectResult }: Se
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/40 backdrop-blur-sm p-4 select-none">
-      <div className="w-full max-w-xl bg-white border border-[#E4E7EC] rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/75 backdrop-blur-sm p-4 select-none font-sans">
+      <div className="w-full max-w-xl bg-[#111111] border border-[#292929] rounded-[4px] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Search Input Bar */}
-        <form onSubmit={handleSearch} className="h-12 border-b border-[#E4E7EC] px-3.5 flex items-center space-x-2 bg-white">
-          <Search className="w-4 h-4 text-[#98A2B3]" />
+        <form onSubmit={handleSearch} className="h-12 border-b border-[#222222] px-3.5 flex items-center space-x-2 bg-[#0C0C0C]">
+          <Search className="w-4 h-4 text-[#707070]" />
           <input
             type="text"
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search messages, tasks, and system events in workspace..."
-            className="flex-1 bg-transparent text-sm text-[#202631] placeholder-[#98A2B3] outline-none"
+            className="flex-1 bg-transparent text-xs text-[#F2F2F2] placeholder-[#555555] outline-none font-mono"
           />
-          <button type="button" onClick={onClose} className="p-1 rounded text-[#667085] hover:text-[#202631] transition">
+          <button type="button" onClick={onClose} className="p-1 rounded text-[#707070] hover:text-[#F2F2F2] hover:bg-[#1A1A1A] transition">
             <X className="w-4 h-4" />
           </button>
         </form>
 
         {/* Results List */}
-        <div className="max-h-96 overflow-y-auto p-2 space-y-1">
+        <div className="max-h-96 overflow-y-auto p-2 space-y-1 font-mono text-xs no-scrollbar">
           {loading ? (
-            <div className="p-6 text-center text-xs text-[#667085]">Searching workspace index...</div>
+            <div className="p-6 text-center text-xs text-[#707070]">Searching workspace index...</div>
           ) : results.length === 0 && query ? (
-            <div className="p-6 text-center text-xs text-[#667085]">No matching messages or tasks found.</div>
+            <div className="p-6 text-center text-xs text-[#707070]">No matching messages or tasks found.</div>
           ) : results.length === 0 ? (
-            <div className="p-6 text-center text-xs text-[#667085]">
-              Type keywords and press <kbd className="font-mono bg-[#F2F4F7] px-1 py-0.5 rounded text-[#475467] border border-[#E4E7EC]">Enter</kbd> to search.
+            <div className="p-6 text-center text-xs text-[#707070]">
+              Type keywords and press <kbd className="bg-[#1C1C1C] px-1 py-0.5 rounded text-[#A1A1A1] border border-[#292929]">Enter</kbd> to search.
             </div>
           ) : (
             results.map((res) => (
@@ -83,19 +83,19 @@ export function SearchModal({ isOpen, onClose, workspaceId, onSelectResult }: Se
                   onSelectResult(res);
                   onClose();
                 }}
-                className="w-full text-left p-2.5 rounded-lg hover:bg-[#F8FAFC] transition group flex items-start space-x-2.5 active:scale-[0.99]"
+                className="w-full text-left p-2.5 rounded-[3px] hover:bg-[#171717] transition group flex items-start space-x-2.5 active:scale-[0.99] border border-transparent hover:border-[#222222]"
               >
-                <div className="p-1.5 rounded-lg bg-[#F8FAFC] border border-[#E4E7EC] text-[#4055A8] flex-shrink-0 mt-0.5">
-                  {res.type === 'task' ? <CheckSquare className="w-3.5 h-3.5 text-[#B7791F]" /> : <MessageSquare className="w-3.5 h-3.5 text-[#4055A8]" />}
+                <div className="p-1.5 rounded bg-[#171717] border border-[#292929] text-[#E8E8E8] flex-shrink-0 mt-0.5">
+                  {res.type === 'task' ? <CheckSquare className="w-3.5 h-3.5 text-[#F59E0B]" /> : <MessageSquare className="w-3.5 h-3.5 text-[#A1A1A1]" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-[#202631] truncate">{res.title}</span>
-                    <span className="text-[10px] font-mono text-[#98A2B3]">{new Date(res.created_at).toLocaleDateString()}</span>
+                    <span className="font-semibold text-[#F2F2F2] truncate">{res.title}</span>
+                    <span className="text-[10px] text-[#555555]">{new Date(res.created_at).toLocaleDateString()}</span>
                   </div>
-                  <div className="text-xs text-[#667085] line-clamp-1 mt-0.5">{res.snippet}</div>
+                  <div className="text-xs text-[#707070] line-clamp-1 mt-0.5 font-sans">{res.snippet}</div>
                 </div>
-                <ArrowRight className="w-3.5 h-3.5 text-[#98A2B3] group-hover:text-[#4055A8] flex-shrink-0 self-center opacity-0 group-hover:opacity-100 transition" />
+                <ArrowRight className="w-3.5 h-3.5 text-[#707070] group-hover:text-[#F2F2F2] flex-shrink-0 self-center opacity-0 group-hover:opacity-100 transition" />
               </button>
             ))
           )}

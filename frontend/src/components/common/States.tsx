@@ -1,13 +1,13 @@
 import React from 'react';
-import { Loader2, AlertCircle, Inbox } from 'lucide-react';
+import { Loader2, AlertCircle, Inbox, RefreshCw } from 'lucide-react';
 
-export function LoadingState({ message = 'Loading collaboration data...' }: { message?: string }) {
+export function LoadingState({ message = 'Synchronizing real-time telemetry...' }: { message?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 px-4 text-center select-none">
-      <Loader2 className="w-8 h-8 text-[#4055A8] animate-spin mb-3" />
-      <p className="text-sm text-[#202631] font-semibold">{message}</p>
-      <div className="mt-4 w-48 h-1.5 bg-[#E4E7EC] rounded-full overflow-hidden">
-        <div className="w-1/2 h-full bg-[#4055A8] rounded-full animate-pulse" />
+    <div className="flex flex-col items-center justify-center py-12 px-4 text-center select-none font-mono">
+      <Loader2 className="w-8 h-8 text-[#E8E8E8] animate-spin mb-3" />
+      <p className="text-xs text-[#F2F2F2] font-semibold tracking-technical uppercase">{message}</p>
+      <div className="mt-4 w-48 h-1 bg-[#222222] rounded-full overflow-hidden">
+        <div className="w-1/2 h-full bg-[#E8E8E8] rounded-full animate-pulse" />
       </div>
     </div>
   );
@@ -15,7 +15,7 @@ export function LoadingState({ message = 'Loading collaboration data...' }: { me
 
 export function EmptyState({
   title = 'No Data Available',
-  description = 'There are no active records in this view.',
+  description = 'There are no active records in this telemetry stream.',
   action,
   icon,
 }: {
@@ -25,35 +25,44 @@ export function EmptyState({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[#D0D5DD] rounded-xl bg-white select-none">
-      <div className="w-12 h-12 rounded-xl bg-[#F8FAFC] border border-[#E4E7EC] flex items-center justify-center text-[#667085] mb-3">
-        {icon || <Inbox className="w-6 h-6 text-[#98A2B3]" />}
+    <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[#292929] rounded-[4px] bg-[#111111] select-none font-mono">
+      <div className="w-12 h-12 rounded-[4px] bg-[#171717] border border-[#292929] flex items-center justify-center text-[#A1A1A1] mb-3">
+        {icon || <Inbox className="w-6 h-6 text-[#707070]" />}
       </div>
-      <h4 className="text-sm font-bold text-[#202631]">{title}</h4>
-      <p className="text-xs text-[#667085] max-w-[65ch] mt-1 mb-4">{description}</p>
+      <h4 className="text-xs font-bold uppercase tracking-technical text-[#F2F2F2]">{title}</h4>
+      <p className="text-xs text-[#A1A1A1] max-w-[65ch] mt-1 mb-4 font-sans">{description}</p>
       {action}
     </div>
   );
 }
 
 export function ErrorState({
-  message = 'An unexpected error occurred.',
+  message = 'An unexpected network error occurred.',
   onRetry,
 }: {
   message?: string;
   onRetry?: () => void;
 }) {
+  const isColdStart = message.toLowerCase().includes('fetch') || message.toLowerCase().includes('sleep');
+
   return (
-    <div className="flex flex-col items-center justify-center py-8 px-4 text-center border border-[#FECDCA] rounded-xl bg-[#FEF3F2] text-[#B42318] select-none">
-      <AlertCircle className="w-8 h-8 text-[#B42318] mb-2" />
-      <h4 className="text-sm font-bold text-[#912018]">Operation Failed</h4>
-      <p className="text-xs text-[#B42318] max-w-[65ch] mt-1 mb-4 font-mono">{message}</p>
+    <div className="flex flex-col items-center justify-center py-8 px-5 text-center border border-[#441C1C] rounded-[4px] bg-[#141010] text-[#EF4444] select-none font-mono max-w-md mx-auto shadow-lg">
+      <AlertCircle className="w-8 h-8 text-[#EF4444] mb-3" />
+      <h4 className="text-xs font-bold uppercase tracking-technical text-[#F87171]">
+        {isColdStart ? 'Connection Suspended / Cold Start' : 'Operation Failed'}
+      </h4>
+      <p className="text-xs text-[#D1D5DB] max-w-[55ch] mt-1.5 mb-4 font-sans leading-relaxed">
+        {isColdStart
+          ? 'The cloud server may be spinning up from idle state. Please wait a few seconds and retry.'
+          : message}
+      </p>
       {onRetry && (
         <button
           onClick={onRetry}
-          className="min-h-[44px] min-w-[44px] px-4 py-2 bg-white hover:bg-[#FEE4E2] text-[#B42318] rounded-lg text-xs font-bold border border-[#FECDCA] active:scale-[0.97] transition shadow-2xs"
+          className="flex items-center space-x-1.5 px-4 py-2 bg-[#E8E8E8] hover:bg-white text-[#080808] rounded-[3px] text-xs font-mono font-bold uppercase tracking-wider transition active:scale-95 shadow-sm"
         >
-          Try Again
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Retry Connection</span>
         </button>
       )}
     </div>

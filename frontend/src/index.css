@@ -1,76 +1,61 @@
 @import "tailwindcss";
 
+@theme {
+  --color-bg-primary: #080808;
+  --color-bg-elevated: #111111;
+  --color-bg-surface: #171717;
+  --color-border-subtle: #292929;
+  --color-text-primary: #F2F2F2;
+  --color-text-secondary: #A1A1A1;
+  --color-text-muted: #707070;
+  --color-interaction: #E8E8E8;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 :root {
-  /* Font Families: Maximum Two */
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   font-family: var(--font-sans);
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* Brand Color (Reserved for Primary Actions and Focus Only) */
-  --color-brand: #4055A8;
-  --color-brand-hover: #334488;
-  --color-brand-focus: #556CD6;
-  --color-brand-light: #EEF2FF;
+  /* Core Grayscale Palette */
+  --bg-primary: #080808;
+  --bg-elevated: #111111;
+  --bg-surface: #171717;
+  --text-primary: #F2F2F2;
+  --text-secondary: #A1A1A1;
+  --text-muted: #707070;
+  --border-primary: #292929;
+  --border-subtle: #1E1E1E;
+  --primary-interaction: #E8E8E8;
 
-  /* Restrained Clean Surfaces (Single Neutral Family: Slate/Gray) */
-  --color-bg-canvas: #F5F6F8;
-  --color-bg-surface: #FFFFFF;
-  --color-bg-elevated: #F8FAFC;
-  --color-bg-input: #FFFFFF;
+  /* Semantic Status Tokens (Muted) */
+  --status-success: #22C55E;
+  --status-warning: #F59E0B;
+  --status-error: #EF4444;
 
-  /* Ink Color for Text (WCAG AA/AAA compliant) */
-  --color-ink-primary: #202631;
-  --color-ink-subtle: #475467;
-  --color-ink-muted: #667085;
-  --color-ink-disabled: #98A2B3;
-
-  /* Borders & Dividers */
-  --color-border: #E4E7EC;
-  --color-border-subtle: #F2F4F7;
-  --color-border-focus: #4055A8;
-
-  /* Status Tokens */
-  --color-success: #16805D;
-  --color-warning: #B7791F;
-  --color-error: #C0393A;
-
-  /* Motion Timing (Under 300ms, ease-out) */
-  --motion-duration-fast: 150ms;
-  --motion-duration-normal: 200ms;
-  --motion-easing: cubic-bezier(0, 0, 0.2, 1);
+  /* Motion Timings */
+  --motion-fast: 150ms;
+  --motion-normal: 220ms;
+  --motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Global Typography Constraints */
-body {
-  background-color: var(--color-bg-canvas);
-  color: var(--color-ink-primary);
+/* Global Reset & Base Typography */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: #080808;
+  color: #F2F2F2;
   font-family: var(--font-sans);
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
-}
-
-/* Body text length constraint: Max 65 characters per line */
-p, .body-text {
-  max-width: 65ch;
-}
-
-/* Bold for emphasis, never italic */
-i, em, .italic {
-  font-style: normal !important;
-  font-weight: 600;
-}
-
-/* Underline strictly reserved for links */
-a {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-button, [role="button"], span, div, h1, h2, h3, h4, h5, h6 {
-  text-decoration: none;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 /* Tabular figures for changing numbers and monospace telemetry */
@@ -79,67 +64,52 @@ code, pre, .font-mono, [data-tabular="true"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* Interactive Elements: Focus Visible & Press Feedback */
-button, [role="button"], a, input, select {
-  transition: transform var(--motion-duration-fast) var(--motion-easing),
-              opacity var(--motion-duration-fast) var(--motion-easing);
-  position: relative;
+/* Editorial letter-spacing conventions */
+.tracking-editorial {
+  letter-spacing: -0.035em;
 }
 
-/* 44px Minimum Touch Target Guarantee */
-button::after, [role="button"]::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 44px;
-  min-height: 44px;
-  width: 100%;
-  height: 100%;
-  pointer-events: auto;
+.tracking-technical {
+  letter-spacing: 0.12em;
 }
 
-button:active, [role="button"]:active {
-  transform: scale(0.97);
+/* Custom Sleek Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-brand-focus);
+::-webkit-scrollbar-track {
+  background: #080808;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #222222;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #333333;
+}
+
+/* Subtle Film Grain Noise Texture */
+.bg-grain {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* Accessible focus visible styles */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 1px solid #E8E8E8;
   outline-offset: 2px;
 }
 
-/* Prefers-Reduced-Motion Fallback */
+/* Reduced Motion Override */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, ::before, ::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-
-  button:active, [role="button"]:active {
-    transform: none !important;
-  }
-}
-
-/* Custom scrollbars for clean light surface */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--color-bg-canvas);
-}
-
-::-webkit-scrollbar-thumb {
-  background: #D0D5DD;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #98A2B3;
 }
