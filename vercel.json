@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run build --workspace=frontend",
-  "outputDirectory": "frontend/dist",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
     {

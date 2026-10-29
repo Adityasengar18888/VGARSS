@@ -5,6 +5,6 @@
     "frontend"
   ],
   "scripts": {
-    "build": "npm run build --workspace=frontend"
+    "build": "npm run build --workspace=frontend && node scripts/copy-dist.js"
   }
 }
