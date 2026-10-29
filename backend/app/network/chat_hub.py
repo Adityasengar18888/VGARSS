@@ -220,6 +220,13 @@ class ChatHub:
         for p in peers:
             p.send_nowait(frame)
 
+    async def broadcast_to_user(self, user_id: str, frame: Dict[str, Any]) -> None:
+        """Sends an event directly to all active sessions of a specific user across all devices/workspaces."""
+        async with self._lock:
+            sessions = list(self._user_sessions.get(user_id, set()))
+        for s in sessions:
+            s.send_nowait(frame)
+
     async def broadcast_message(
         self,
         workspace_id: str,
@@ -247,10 +254,47 @@ class ChatHub:
 
         self.buffer_event(target_id, frame)
 
-        async with self._lock:
-            subscribers = list(self._workspace_subscribers.get(workspace_id, []))
+        target_sessions: Set[ChatClientSession] = set()
 
-        for s in subscribers:
+        async with self._lock:
+            # 1. Include all current subscribers of the workspace
+            target_sessions.update(self._workspace_subscribers.get(workspace_id, set()))
+
+            # 2. For Direct Messages: deliver directly to ALL active sessions of all participants
+            # regardless of which workspace they are currently focused on
+            if conversation_id:
+                try:
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT user_id FROM direct_conversation_participants WHERE conversation_id = ?",
+                        (conversation_id,),
+                    )
+                    for r in cursor.fetchall():
+                        uid = r["user_id"]
+                        target_sessions.update(self._user_sessions.get(uid, set()))
+                    conn.close()
+                except Exception as e:
+                    logger.warning(f"Could not resolve DM participants for fanout: {e}")
+
+            # 3. For Channel Messages: also deliver to any online member of the workspace
+            # even if they currently have another workspace active in their tab
+            elif channel_id:
+                try:
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT user_id FROM workspace_members WHERE workspace_id = ?",
+                        (workspace_id,),
+                    )
+                    for r in cursor.fetchall():
+                        uid = r["user_id"]
+                        target_sessions.update(self._user_sessions.get(uid, set()))
+                    conn.close()
+                except Exception as e:
+                    logger.warning(f"Could not resolve workspace members for channel fanout: {e}")
+
+        for s in target_sessions:
             s.send_nowait(frame)
 
     async def broadcast_task_event(self, workspace_id: str, event_type: str, task_dict: Dict[str, Any]) -> None:
@@ -403,11 +447,15 @@ class ChatHub:
                 "timestamp": now_iso,
             }
 
-            # Broadcast update to workspace subscribers
+            # Broadcast update to workspace subscribers AND directly to sender & recipient
+            target_receipt_sessions: Set[ChatClientSession] = set()
             async with self._lock:
-                subscribers = list(self._workspace_subscribers.get(ws_id, []))
+                target_receipt_sessions.update(self._workspace_subscribers.get(ws_id, set()))
+                if msg_row.get("sender_id"):
+                    target_receipt_sessions.update(self._user_sessions.get(msg_row["sender_id"], set()))
+                target_receipt_sessions.update(self._user_sessions.get(session.user_id, set()))
 
-            for s in subscribers:
+            for s in target_receipt_sessions:
                 s.send_nowait(frame)
 
             return frame

@@ -12,6 +12,7 @@ export interface ChatWebSocketOptions {
   onTypingEvent?: (data: { target_id: string; user_id: string; username: string; display_name: string }) => void;
   onTaskEvent?: (task: any) => void;
   onReceiptEvent?: (event: MessageReceiptEvent) => void;
+  onWorkspaceAdded?: (data: { workspace_id: string; workspace_name: string; role?: string }) => void;
 }
 
 export function useChatWebSocket({
@@ -23,6 +24,7 @@ export function useChatWebSocket({
   onTypingEvent,
   onTaskEvent,
   onReceiptEvent,
+  onWorkspaceAdded,
 }: ChatWebSocketOptions) {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const [latency, setLatency] = useState<number | null>(null);
@@ -162,6 +164,8 @@ export function useChatWebSocket({
             eventType === 'MESSAGE_DELIVERY_UPDATE'
           ) {
             if (onReceiptEvent) onReceiptEvent(data);
+          } else if (eventType === 'WORKSPACE_ADDED') {
+            if (onWorkspaceAdded) onWorkspaceAdded(data);
           }
         } catch {
           // ignore parsing error

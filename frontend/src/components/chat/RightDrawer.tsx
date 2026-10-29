@@ -85,7 +85,9 @@ export function RightDrawer({
                 {onlineMembers.map((m) => (
                   <div
                     key={m.user_id}
-                    className="flex items-center justify-between p-1.5 rounded-lg hover:bg-white hover:shadow-2xs transition group"
+                    onClick={() => onOpenDmWithUser(m.user_id)}
+                    className="flex items-center justify-between p-1.5 rounded-lg hover:bg-white hover:shadow-2xs transition group cursor-pointer"
+                    title={`Click to send direct message to ${m.display_name || m.username}`}
                   >
                     <div className="flex items-center space-x-2 truncate">
                       <span className="relative flex-shrink-0">
@@ -103,7 +105,10 @@ export function RightDrawer({
                     </div>
 
                     <button
-                      onClick={() => onOpenDmWithUser(m.user_id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDmWithUser(m.user_id);
+                      }}
                       className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#EEF2FF] text-[#667085] hover:text-[#4055A8] transition"
                       title={`Direct message ${m.username}`}
                     >
@@ -124,7 +129,9 @@ export function RightDrawer({
                   {offlineMembers.map((m) => (
                     <div
                       key={m.user_id}
-                      className="flex items-center justify-between p-1.5 rounded-lg hover:bg-white hover:shadow-2xs transition group opacity-75 hover:opacity-100"
+                      onClick={() => onOpenDmWithUser(m.user_id)}
+                      className="flex items-center justify-between p-1.5 rounded-lg hover:bg-white hover:shadow-2xs transition group opacity-75 hover:opacity-100 cursor-pointer"
+                      title={`Click to send direct message to ${m.display_name || m.username}`}
                     >
                       <div className="flex items-center space-x-2 truncate">
                         <span className="relative flex-shrink-0">
@@ -142,7 +149,10 @@ export function RightDrawer({
                       </div>
 
                       <button
-                        onClick={() => onOpenDmWithUser(m.user_id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenDmWithUser(m.user_id);
+                        }}
                         className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#EEF2FF] text-[#667085] hover:text-[#4055A8] transition"
                         title={`Direct message ${m.username}`}
                       >

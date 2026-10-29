@@ -1,6 +1,8 @@
 """Workspaces, Memberships & RBAC REST Router (VGARSS 2.0)."""
 import uuid
 import re
+import asyncio
+from datetime import datetime, timezone
 import sqlite3
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -241,6 +243,24 @@ def add_workspace_member(
 
         # Sync to group_memberships
         db.execute("INSERT OR IGNORE INTO group_memberships (group_id, user_id, role) VALUES (?, ?, 'MEMBER')", (workspace_id, target_id))
+
+    # Notify target user session in real-time
+    ws_row = db.execute("SELECT name FROM workspaces WHERE id = ?", (workspace_id,)).fetchone()
+    ws_name = ws_row["name"] if ws_row else "Workspace"
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(chat_hub.broadcast_to_user(
+            target_id,
+            {
+                "type": "WORKSPACE_ADDED",
+                "workspace_id": workspace_id,
+                "workspace_name": ws_name,
+                "role": payload.role,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        ))
+    except Exception:
+        pass
 
     return WorkspaceMemberResponse(
         user_id=target_id,

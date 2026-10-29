@@ -74,6 +74,13 @@ export function ServerSidebar({
               >
                 {initials}
               </button>
+
+              {/* Workspace Name Flyout Tooltip */}
+              <div className="absolute left-14 top-1/2 -translate-y-1/2 z-50 pointer-events-none hidden group-hover:flex items-center pl-2">
+                <div className="bg-[#1D2939] text-white text-[11px] font-medium py-1 px-2.5 rounded-md shadow-lg whitespace-nowrap">
+                  {ws.name}
+                </div>
+              </div>
             </div>
           );
         })}

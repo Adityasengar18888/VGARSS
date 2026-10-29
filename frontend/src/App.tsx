@@ -117,16 +117,58 @@ export default function App() {
       );
     },
     onMessageReceived: (newMsg) => {
-      setMessages((prev) => {
-        // Prevent duplicate appending
-        if (prev.some((m) => m.id === newMsg.id || (m.client_msg_id && m.client_msg_id === newMsg.client_msg_id))) {
-          return prev.map((m) => (m.client_msg_id === newMsg.client_msg_id ? newMsg : m));
-        }
-        return [...prev, newMsg];
-      });
+      // 1. Only append to active view if it belongs to current active channel or active DM
+      const isForActiveChannel = Boolean(activeChannel && newMsg.channel_id && newMsg.channel_id === activeChannel.id);
+      const isForActiveDm = Boolean(activeDm && newMsg.conversation_id && newMsg.conversation_id === activeDm.id);
 
-      // Recipient auto-acknowledges receipt
+      if (isForActiveChannel || isForActiveDm) {
+        setMessages((prev) => {
+          // Prevent duplicate appending
+          if (prev.some((m) => m.id === newMsg.id || (m.client_msg_id && m.client_msg_id === newMsg.client_msg_id))) {
+            return prev.map((m) => (m.client_msg_id === newMsg.client_msg_id ? newMsg : m));
+          }
+          return [...prev, newMsg];
+        });
+      }
+
+      // 2. Update channel unread counter if message is for another channel
+      if (newMsg.channel_id && (!activeChannel || activeChannel.id !== newMsg.channel_id)) {
+        setChannels((prev) =>
+          prev.map((c) => (c.id === newMsg.channel_id ? { ...c, unread_count: (c.unread_count || 0) + 1 } : c))
+        );
+      }
+
+      // 3. Update direct message unread counter or fetch new DM conversation
+      if (newMsg.conversation_id) {
+        setDms((prev) => {
+          const exists = prev.some((d) => d.id === newMsg.conversation_id);
+          if (exists) {
+            if (!activeDm || activeDm.id !== newMsg.conversation_id) {
+              return prev.map((d) =>
+                d.id === newMsg.conversation_id ? { ...d, unread_count: (d.unread_count || 0) + 1 } : d
+              );
+            }
+            return prev;
+          } else {
+            // New DM conversation appeared: sync list from backend
+            if (activeWorkspace) {
+              api.listDms(activeWorkspace.id).then(setDms).catch(() => {});
+            }
+            return prev;
+          }
+        });
+      }
+
+      // 4. Recipient auto-acknowledges receipt (delivered/read)
       messageLifecycle.acknowledgeIncomingMessage(newMsg, activeViewTab === 'chat');
+    },
+    onWorkspaceAdded: async () => {
+      try {
+        const wsList = await api.listWorkspaces();
+        setWorkspaces(wsList);
+      } catch {
+        // ignore
+      }
     },
     onPresenceUpdate: (userId, presenceState) => {
       setMembers((prev) =>
