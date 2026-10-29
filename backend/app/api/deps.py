@@ -50,14 +50,19 @@ def get_current_user(
         )
 
     # Check expiration
-    expires_str = row["expires_at"]
-    try:
-        expires_at = datetime.datetime.fromisoformat(expires_str)
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
-    except Exception:
-        # Fallback ISO parser
-        expires_at = datetime.datetime.strptime(expires_str.split(".")[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+    expires_raw = row["expires_at"]
+    if isinstance(expires_raw, datetime.datetime):
+        expires_at = expires_raw
+    else:
+        expires_str = str(expires_raw)
+        try:
+            expires_at = datetime.datetime.fromisoformat(expires_str)
+        except Exception:
+            # Fallback ISO parser
+            expires_at = datetime.datetime.strptime(expires_str.split(".")[0], "%Y-%m-%d %H:%M:%S")
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
 
     if datetime.datetime.now(datetime.timezone.utc) > expires_at:
         db.execute("DELETE FROM sessions WHERE token = ?", (session_token,))

@@ -180,15 +180,19 @@ class ConnectionManager:
                 return None
 
             # Validate expiration
-            expires_str = row["expires_at"]
-            try:
-                expires_at = datetime.fromisoformat(expires_str)
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-            except Exception:
-                expires_at = datetime.strptime(
-                    expires_str.split(".")[0], "%Y-%m-%d %H:%M:%S"
-                ).replace(tzinfo=timezone.utc)
+            expires_raw = row["expires_at"]
+            if isinstance(expires_raw, datetime):
+                expires_at = expires_raw
+            else:
+                expires_str = str(expires_raw)
+                try:
+                    expires_at = datetime.fromisoformat(expires_str)
+                except Exception:
+                    expires_at = datetime.strptime(
+                        expires_str.split(".")[0], "%Y-%m-%d %H:%M:%S"
+                    )
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
 
             if datetime.now(timezone.utc) > expires_at:
                 return None

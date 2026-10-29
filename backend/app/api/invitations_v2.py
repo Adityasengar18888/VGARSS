@@ -205,7 +205,8 @@ def preview_invitation(code: str, db: sqlite3.Connection = Depends(get_db)):
         invalid_reason = "This invitation has reached its maximum allowed uses."
     elif row["expires_at"]:
         try:
-            expires_at = datetime.datetime.fromisoformat(row["expires_at"])
+            exp_val = row["expires_at"]
+            expires_at = exp_val if isinstance(exp_val, datetime.datetime) else datetime.datetime.fromisoformat(str(exp_val))
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
             if datetime.datetime.now(datetime.timezone.utc) > expires_at:
@@ -258,7 +259,8 @@ async def join_workspace_via_invitation(
 
     if inv["expires_at"]:
         try:
-            expires_at = datetime.datetime.fromisoformat(inv["expires_at"])
+            inv_exp = inv["expires_at"]
+            expires_at = inv_exp if isinstance(inv_exp, datetime.datetime) else datetime.datetime.fromisoformat(str(inv_exp))
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
             if datetime.datetime.now(datetime.timezone.utc) > expires_at:

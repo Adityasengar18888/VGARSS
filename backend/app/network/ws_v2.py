@@ -30,7 +30,13 @@ def verify_session_token(token: str) -> Optional[dict]:
         if not row:
             return None
         # Check expiration
-        expires_at = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
+        exp_raw = row["expires_at"]
+        if isinstance(exp_raw, datetime):
+            expires_at = exp_raw
+        else:
+            expires_at = datetime.fromisoformat(str(exp_raw).replace("Z", "+00:00"))
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) > expires_at:
             return None
         return {
