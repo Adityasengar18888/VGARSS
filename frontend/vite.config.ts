@@ -3,8 +3,9 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Determine base path: defaults to '/vgarss/' for production deployment on adityasengar.online/vgarss, overridable via VITE_BASE_PATH
-const basePath = process.env.VITE_BASE_PATH || (process.env.NODE_ENV === 'production' ? '/vgarss/' : '/');
+// Use relative base './' so assets load seamlessly at root (https://vgarss.vercel.app)
+// AND under subpaths (https://adityasengar.online/vgarss) without 404s or MIME type mismatches
+const basePath = process.env.VITE_BASE_PATH || './';
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -19,7 +20,7 @@ export default defineConfig({
       manifest: false, // Authoritative manifest placed in public/manifest.webmanifest
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        navigateFallback: `${basePath.endsWith('/') ? basePath : basePath + '/'}index.html`,
+        navigateFallback: null, // Let SPA router and Vercel handle client-side navigations
         navigateFallbackDenylist: [
           /^\/api/,
           /^\/ws/,
