@@ -1,0 +1,10 @@
+{
+  "name": "vgarss",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=frontend"
+  }
+}
