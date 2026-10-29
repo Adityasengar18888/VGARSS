@@ -72,6 +72,13 @@ def register(payload: UserRegister, response: Response, db: sqlite3.Connection =
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
             (token, user_id, expires_at.isoformat()),
         )
+        # Automatically enroll newly registered user in the primary collaboration workspace
+        cursor = db.execute("SELECT id FROM workspaces WHERE id = 'ws-core-engineering'")
+        if cursor.fetchone():
+            db.execute(
+                "INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES ('ws-core-engineering', ?, 'MEMBER')",
+                (user_id,),
+            )
 
     _set_auth_cookie(response, token)
 

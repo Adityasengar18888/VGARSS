@@ -33,6 +33,7 @@ interface ChannelSidebarProps {
   onOpenWorkspaceSettings: () => void;
   wsStatus: 'connecting' | 'connected' | 'disconnected';
   apiLatency: number | null;
+  onReconnect?: () => void;
 }
 
 export function ChannelSidebar({
@@ -51,6 +52,7 @@ export function ChannelSidebar({
   onOpenWorkspaceSettings,
   wsStatus,
   apiLatency,
+  onReconnect,
 }: ChannelSidebarProps) {
   return (
     <aside
@@ -282,14 +284,18 @@ export function ChannelSidebar({
       </div>
 
       {/* Network Status & Latency Bar */}
-      <div className="border-t border-[#222222] px-3 py-2 bg-[#090909] flex items-center justify-between text-[11px] font-mono">
+      <div
+        onClick={onReconnect}
+        title={wsStatus === 'connected' ? 'Live Telemetry Active' : 'Click to reconnect'}
+        className="border-t border-[#222222] px-3 py-2 bg-[#090909] flex items-center justify-between text-[11px] font-mono cursor-pointer hover:bg-[#141414] transition"
+      >
         <div className="flex items-center space-x-1.5">
           <span
             className={`w-2 h-2 rounded-full ${
               wsStatus === 'connected'
                 ? 'bg-[#22C55E]'
                 : wsStatus === 'connecting'
-                ? 'bg-[#F59E0B]'
+                ? 'bg-[#F59E0B] animate-pulse'
                 : 'bg-[#EF4444]'
             }`}
           />

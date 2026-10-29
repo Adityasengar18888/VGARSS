@@ -377,12 +377,12 @@ export default function App() {
         const savedWsId = localStorage.getItem('vgarss_active_workspace_id');
         let selectedWs = wsList.find((w) => w.id === savedWsId);
 
-        // If no saved selection, look for a workspace the user joined (not owner) or a collaborative workspace
+        // Always prefer the shared primary workspace so all teammates collaborate in the same channels
         if (!selectedWs) {
-          const joinedWs = wsList.find(
-            (w) => w.role !== 'OWNER' || w.name.includes("adi's") || !w.name.includes(`${user.username}'s`)
+          const coreWs = wsList.find(
+            (w) => w.id === 'ws-core-engineering' || w.name.toLowerCase().includes('core')
           );
-          selectedWs = joinedWs || wsList[0];
+          selectedWs = coreWs || wsList[0];
         }
 
         setActiveWorkspace(selectedWs);
@@ -720,8 +720,9 @@ export default function App() {
           const wsList = await api.listWorkspaces();
           setWorkspaces(wsList);
           if (wsList.length > 0) {
-            setActiveWorkspace(wsList[0]);
-            await refreshWorkspaceData(wsList[0].id);
+            const preferred = wsList.find((w) => w.id === 'ws-core-engineering' || w.name.toLowerCase().includes('core')) || wsList[0];
+            setActiveWorkspace(preferred);
+            await refreshWorkspaceData(preferred.id);
           } else {
             const defaultWs = await api.createWorkspace({
               name: `${user.display_name || user.username}'s Workspace`,
@@ -813,6 +814,7 @@ export default function App() {
             onOpenWorkspaceSettings={() => setIsSettingsOpen(true)}
             wsStatus={chatWs.status}
             apiLatency={apiLatency}
+            onReconnect={chatWs.forceReconnect}
           />
         </div>
 

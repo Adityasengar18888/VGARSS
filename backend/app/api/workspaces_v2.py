@@ -53,13 +53,22 @@ def list_workspaces(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Lists all workspaces accessible to the authenticated user."""
+    # Ensure user is enrolled in the primary collaboration workspace
+    primary_check = db.execute("SELECT id FROM workspaces WHERE id = 'ws-core-engineering'").fetchone()
+    if primary_check:
+        with db:
+            db.execute(
+                "INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES ('ws-core-engineering', ?, 'MEMBER')",
+                (current_user["id"],),
+            )
+
     cursor = db.execute(
         """
         SELECT w.id, w.name, w.slug, w.description, w.icon_url, w.owner_id, w.created_at, m.role
         FROM workspaces w
         JOIN workspace_members m ON w.id = m.workspace_id
         WHERE m.user_id = ?
-        ORDER BY w.created_at DESC
+        ORDER BY (CASE WHEN w.id = 'ws-core-engineering' THEN 0 ELSE 1 END), w.created_at ASC
         """,
         (current_user["id"],),
     )

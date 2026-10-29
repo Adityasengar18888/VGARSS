@@ -52,8 +52,7 @@ def list_direct_conversations(
     """Lists all active direct message conversations for the user in this workspace or shared workspaces."""
     check_workspace_membership(db, workspace_id, current_user["id"])
 
-    # Query all DM conversations where current_user is a participant in this workspace
-    # OR across any shared workspace the user belongs to
+    # Query all DM conversations where current_user is a participant
     cursor = db.execute(
         """
         SELECT c.id AS conversation_id, c.workspace_id, c.is_group, p_self.unread_count,
@@ -64,11 +63,9 @@ def list_direct_conversations(
         JOIN direct_conversation_participants p_self ON c.id = p_self.conversation_id AND p_self.user_id = ?
         JOIN direct_conversation_participants p_peer ON c.id = p_peer.conversation_id AND p_peer.user_id != ?
         JOIN users u_peer ON p_peer.user_id = u_peer.id
-        WHERE c.workspace_id = ?
-           OR c.workspace_id IN (SELECT wm.workspace_id FROM workspace_members wm WHERE wm.user_id = ?)
         ORDER BY c.created_at DESC
         """,
-        (current_user["id"], current_user["id"], workspace_id, current_user["id"]),
+        (current_user["id"], current_user["id"]),
     )
     rows = cursor.fetchall()
     results = []
@@ -133,24 +130,23 @@ def open_or_create_dm(
             """,
             (current_user["id"], payload.recipient_id),
         ).fetchone()
-        if not shared_ws:
-            raise HTTPException(
-                status_code=403,
-                detail="Forbidden: The recipient does not share any workspace with you.",
-            )
-        target_ws_id = shared_ws["workspace_id"]
+        if shared_ws:
+            target_ws_id = shared_ws["workspace_id"]
+        else:
+            # Fall back to primary workspace
+            target_ws_id = "ws-core-engineering"
 
-    # Check for existing 1:1 conversation between the two users
+    # Check for existing 1:1 conversation between the two users across any workspace
     cursor = db.execute(
         """
         SELECT c.id, c.workspace_id
         FROM direct_conversations c
         JOIN direct_conversation_participants p1 ON c.id = p1.conversation_id AND p1.user_id = ?
         JOIN direct_conversation_participants p2 ON c.id = p2.conversation_id AND p2.user_id = ?
-        WHERE (c.workspace_id = ? OR c.workspace_id = ?) AND c.is_group = 0
+        WHERE c.is_group = 0
         LIMIT 1
         """,
-        (current_user["id"], payload.recipient_id, workspace_id, target_ws_id),
+        (current_user["id"], payload.recipient_id),
     )
     existing = cursor.fetchone()
     convo_id = existing["id"] if existing else None

@@ -552,6 +552,8 @@ def _migrate_columns_postgres(conn: Any) -> None:
         "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email IN ('probe_check@test.com', 'diag1@test.com') OR username IN ('test_diag_1', 'testuser_probe'));",
         "DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM users WHERE email IN ('probe_check@test.com', 'diag1@test.com') OR username IN ('test_diag_1', 'testuser_probe'));",
         "DELETE FROM users WHERE email IN ('probe_check@test.com', 'diag1@test.com') OR username IN ('test_diag_1', 'testuser_probe');",
+        # Auto-join all registered users to the primary collaboration workspace
+        "INSERT INTO workspace_members (workspace_id, user_id, role) SELECT 'ws-core-engineering', id, 'MEMBER' FROM users ON CONFLICT DO NOTHING;",
     ]
     cur = conn.cursor()
     for sql in migrations:
@@ -796,6 +798,13 @@ def _seed_defaults(conn: Any) -> None:
     cursor.execute("INSERT OR IGNORE INTO group_memberships (group_id, user_id, role) VALUES (?, ?, 'ADMIN')", (ws_id, alice_id))
     cursor.execute("INSERT OR IGNORE INTO group_memberships (group_id, user_id, role) VALUES (?, ?, 'ADMIN')", (ws_id, bob_id))
     cursor.execute("INSERT OR IGNORE INTO group_memberships (group_id, user_id, role) VALUES (?, ?, 'MEMBER')", (ws_id, charlie_id))
+
+    # Ensure all existing and newly registered users belong to the primary collaboration workspace
+    cursor.execute("SELECT id FROM users")
+    for u_row in cursor.fetchall():
+        uid = u_row["id"] if isinstance(u_row, dict) or hasattr(u_row, "__getitem__") else u_row[0]
+        cursor.execute("INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'MEMBER')", (ws_id, uid))
+        cursor.execute("INSERT OR IGNORE INTO group_memberships (group_id, user_id, role) VALUES (?, ?, 'MEMBER')", (ws_id, uid))
 
     # Seed Default Channels
     channels = [

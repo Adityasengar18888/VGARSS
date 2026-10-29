@@ -122,12 +122,12 @@ export function useChatWebSocket({
         lastPingTimestamp.current = performance.now();
         sendEvent({ type: 'PING' });
 
-        // Start ping interval
+        // Start ping interval (10s keepalive to prevent proxy timeouts)
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = setInterval(() => {
           lastPingTimestamp.current = performance.now();
           sendEvent({ type: 'PING' });
-        }, 15000);
+        }, 10000);
 
         // Catch up on active target if disconnected previously
         const currentActive = activeTargetIdRef.current;
@@ -217,8 +217,25 @@ export function useChatWebSocket({
 
     connect();
 
+    // Auto-reconnect immediately when device wakes up, tab regains focus, or network returns
+    const handleWakeup = () => {
+      if (isUnmounted) return;
+      if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING) {
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        reconnectAttempts.current = 0;
+        connect();
+      }
+    };
+
+    window.addEventListener('online', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
+    document.addEventListener('visibilitychange', handleWakeup);
+
     return () => {
       isUnmounted = true;
+      window.removeEventListener('online', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
+      document.removeEventListener('visibilitychange', handleWakeup);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       Object.values(typingTimersRef.current).forEach((t) => clearTimeout(t));
@@ -229,6 +246,17 @@ export function useChatWebSocket({
     };
   }, [token, workspaceId, sendEvent, requestCatchup]);
 
+  const forceReconnect = useCallback(() => {
+    reconnectAttempts.current = 0;
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
   return {
     status,
     latency,
@@ -236,5 +264,6 @@ export function useChatWebSocket({
     sendTyping,
     sendEvent,
     requestCatchup,
+    forceReconnect,
   };
 }
