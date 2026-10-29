@@ -12,3 +12,4 @@ if (fs.existsSync(src)) {
   console.error(`Source directory not found: ${src}`);
   process.exit(1);
 }
+
