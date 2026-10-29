@@ -3,7 +3,8 @@ import logging
 import asyncio
 import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -99,6 +100,17 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Range", "X-Total-Count"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    tb = traceback.format_exc()
+    logger.error(f"Unhandled exception on {request.method} {request.url.path}: {exc}\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "type": type(exc).__name__, "path": request.url.path}
+    )
 
 # Include Versioned REST Routers (V1)
 app.include_router(auth_router)
